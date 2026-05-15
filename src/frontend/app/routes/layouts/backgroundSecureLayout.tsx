@@ -1,6 +1,26 @@
-import { Outlet } from "react-router";
+import { useEffect, useState } from "react";
+import { Outlet, useNavigate } from "react-router";
+import { authService } from "~/services/authService";
 
 export default function BackgroundSecureLayout() {
+    const navigate = useNavigate();
+    const [allowed, setAllowed] = useState(false);
+
+    useEffect(() => {
+        authService.me().then((user) => {
+            if (!user) {
+                navigate("/signin", { replace: true });
+                return;
+            }
+
+            setAllowed(true);
+        });
+    }, [navigate]);
+
+    if (!allowed) {
+        return null;
+    }
+
     return (
         <div className="relative w-full min-h-screen overflow-hidden">
 

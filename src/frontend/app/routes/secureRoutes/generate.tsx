@@ -32,7 +32,6 @@ export default function Generate() {
                                 Generating
                             </span>
                         </div>
-
                         <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                             {messages.map((msg) => (
                                 <div key={msg.id} className={`flex items-end gap-2.5 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
@@ -45,7 +44,6 @@ export default function Generate() {
                                 </div>
                             ))}
                         </div>
-
                         <div className="border-t border-yellow-400/20 p-4">
                             <div className="flex items-end gap-2 rounded-2xl border border-yellow-400/30 bg-white/5 px-4 py-3">
                                 <textarea
@@ -69,7 +67,6 @@ export default function Generate() {
                                 </button>
                             </div>
                         </div>
-
                         <div className="flex flex-1 flex-col items-center justify-center gap-5 p-6">
                             <div className="relative aspect-video w-full overflow-hidden rounded-2xl border border-yellow-400/20">
                                 <div className="h-full w-full bg-zinc-900" />
@@ -80,7 +77,6 @@ export default function Generate() {
                                     </div>
                                 </div>
                             </div>
-
                             <div className="grid w-full grid-cols-4 gap-3">
                                 {[{ label: "Tempo", value: "60 BPM" }, { label: "Genre", value: "Lofi" }, { label: "Duration", value: "3:24" }, { label: "Mood", value: "Melancholic" }].map((item) => (
                                     <div key={item.label} className="rounded-xl border border-yellow-400/20 bg-white/5 p-3">

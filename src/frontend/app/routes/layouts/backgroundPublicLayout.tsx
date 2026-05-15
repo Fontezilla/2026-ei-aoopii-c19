@@ -1,6 +1,31 @@
-import { Outlet } from "react-router";
+import { useEffect, useState } from "react";
+import { Outlet, useNavigate } from "react-router";
+import { authService } from "~/services/authService";
 
 export default function BackgroundPublicLayout() {
+    const navigate = useNavigate();
+    const [allowed, setAllowed] = useState(false);
+
+    useEffect(() => {
+        if (!authService.hasStoredUser()) {
+            setAllowed(true);
+            return;
+        }
+
+        authService.me().then((user) => {
+            if (user) {
+                navigate("/app/generate", { replace: true });
+                return;
+            }
+
+            setAllowed(true);
+        });
+    }, [navigate]);
+
+    if (!allowed) {
+        return null;
+    }
+
     return (
         <div className="fixed inset-0 w-screen h-screen overflow-hidden">
 

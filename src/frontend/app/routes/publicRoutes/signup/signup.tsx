@@ -11,6 +11,8 @@ export default function SignUp() {
         form,
         showPassword,
         showConfirmPassword,
+        error,
+        loading,
         handleChange,
         handleSubmit,
         togglePassword,
@@ -120,11 +122,17 @@ export default function SignUp() {
                                     </button>
                                 </div>
                             </div>
+                            {error && (
+                                <p className="rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                                    {error}
+                                </p>
+                            )}
                             <button
                                 type="submit"
+                                disabled={loading}
                                 className="mt-2 flex w-full items-center justify-center gap-3 rounded-full bg-yellow-400 py-4 text-lg font-semibold text-black hover:bg-amber-300"
                             >
-                                Sign Up
+                                {loading ? "Creating..." : "Sign Up"}
                                 <ArrowRight size={20} />
                             </button>
                             <p className="mt-4 text-center text-sm leading-relaxed text-zinc-400">
