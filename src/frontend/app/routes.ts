@@ -7,6 +7,8 @@ export default [
         route("signup", "routes/publicRoutes/signup/signup.tsx"),
     ]),
     route("app", "routes/layouts/backgroundSecureLayout.tsx", [
-        index("routes/secureRoutes/home/home.tsx"),
+        index("routes/secureRoutes/home.tsx"),
+        route("generate", "routes/secureRoutes/generate.tsx"),
+        route("history", "routes/secureRoutes/history.tsx"),
     ]),
 ] satisfies RouteConfig;

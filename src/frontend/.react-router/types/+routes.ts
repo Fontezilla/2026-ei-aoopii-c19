@@ -23,12 +23,18 @@ type Pages = {
   "/app": {
     params: {};
   };
+  "/app/generate": {
+    params: {};
+  };
+  "/app/history": {
+    params: {};
+  };
 };
 
 type RouteFiles = {
   "root.tsx": {
     id: "root";
-    page: "/" | "/signin" | "/signup" | "/app";
+    page: "/" | "/signin" | "/signup" | "/app" | "/app/generate" | "/app/history";
   };
   "routes/layouts/backgroundPublicLayout.tsx": {
     id: "routes/layouts/backgroundPublicLayout";
@@ -48,11 +54,19 @@ type RouteFiles = {
   };
   "routes/layouts/backgroundSecureLayout.tsx": {
     id: "routes/layouts/backgroundSecureLayout";
+    page: "/app" | "/app/generate" | "/app/history";
+  };
+  "routes/secureRoutes/home.tsx": {
+    id: "routes/secureRoutes/home";
     page: "/app";
   };
-  "routes/secureRoutes/home/home.tsx": {
-    id: "routes/secureRoutes/home/home";
-    page: "/app";
+  "routes/secureRoutes/generate.tsx": {
+    id: "routes/secureRoutes/generate";
+    page: "/app/generate";
+  };
+  "routes/secureRoutes/history.tsx": {
+    id: "routes/secureRoutes/history";
+    page: "/app/history";
   };
 };
 
@@ -63,5 +77,7 @@ type RouteModules = {
   "routes/publicRoutes/signin/signin": typeof import("./app/routes/publicRoutes/signin/signin.tsx");
   "routes/publicRoutes/signup/signup": typeof import("./app/routes/publicRoutes/signup/signup.tsx");
   "routes/layouts/backgroundSecureLayout": typeof import("./app/routes/layouts/backgroundSecureLayout.tsx");
-  "routes/secureRoutes/home/home": typeof import("./app/routes/secureRoutes/home/home.tsx");
+  "routes/secureRoutes/home": typeof import("./app/routes/secureRoutes/home.tsx");
+  "routes/secureRoutes/generate": typeof import("./app/routes/secureRoutes/generate.tsx");
+  "routes/secureRoutes/history": typeof import("./app/routes/secureRoutes/history.tsx");
 };
