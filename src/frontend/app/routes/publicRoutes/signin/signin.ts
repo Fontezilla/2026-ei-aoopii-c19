@@ -51,7 +51,7 @@ export function useSignInForm() {
                 localStorage.removeItem("rememberedEmail");
             }
 
-            navigate("/app/generate");
+            navigate("/app");
         } catch (err: any) {
             setError(err.message ?? "Erro ao fazer login.");
         } finally {
