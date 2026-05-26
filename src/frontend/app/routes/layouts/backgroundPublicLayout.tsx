@@ -14,7 +14,7 @@ export default function BackgroundPublicLayout() {
 
         authService.me().then((user) => {
             if (user) {
-                navigate("/app/generate", { replace: true });
+                navigate("/app", { replace: true });
                 return;
             }
 
