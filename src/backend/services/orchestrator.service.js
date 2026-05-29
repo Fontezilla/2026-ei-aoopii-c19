@@ -178,7 +178,6 @@ async function runPlanOnly(jobId, conversationId, theme, style, durationSeconds)
         job_id:        jobId,
         creative_plan: plan,
         music_prompt:  plan.music_prompt || theme,
-        image_prompts: (plan.storyboard || []).map((s) => s.image_prompt).filter(Boolean),
         settings:      plan.settings || {},
     });
 
@@ -216,7 +215,6 @@ async function runFullPipeline(jobId, conversationId, theme, style, durationSeco
         job_id:        jobId,
         creative_plan: plan,
         music_prompt:  musicPrompt,
-        image_prompts: imagePrompts,
         settings:      plan.settings || {},
     });
     await supabase.from("jobs").update({ theme }).eq("id", jobId);
