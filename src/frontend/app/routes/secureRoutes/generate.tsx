@@ -141,11 +141,15 @@ export default function Generate() {
             if (!res.ok) return;
             const data = await res.json();
             setJobStatus(data.status);
-            if (data.status === "COMPLETED" || data.status === "FAILED") {
+            // Atualizar sempre o jobMeta se houver dados — permite mostrar output parcial
+            // ao re-entrar num job que ainda estava em geração
+            if (data.output_path || data.metadata) {
                 setJobMeta({
                     output_path: data.output_path ?? null,
                     ...(data.metadata ?? {}),
                 });
+            }
+            if (data.status === "COMPLETED" || data.status === "FAILED") {
                 loadMessages(jid);
             }
         } catch {}

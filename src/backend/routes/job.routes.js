@@ -93,16 +93,13 @@ router.get("/:id/status", async (req, res) => {
             return res.status(404).json({ message: "Job não encontrado." });
         }
 
-        // Se done, incluir metadata
-        let metadata = null;
-        if (job.status === "COMPLETED") {
-            const { data: meta } = await supabase
-                .from("job_metadata")
-                .select("music_prompt, settings, storyboard")
-                .eq("job_id", job.id)
-                .single();
-            metadata = meta || null;
-        }
+        // Incluir sempre metadata (pode haver output parcial a meio da geração)
+        const { data: meta } = await supabase
+            .from("job_metadata")
+            .select("music_prompt, settings, storyboard")
+            .eq("job_id", job.id)
+            .single();
+        const metadata = meta || null;
 
         res.json({ ...job, metadata });
     } catch (err) {
