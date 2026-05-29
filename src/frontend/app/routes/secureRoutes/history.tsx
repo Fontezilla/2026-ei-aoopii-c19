@@ -1,118 +1,267 @@
-import { Play, Download } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router";
+import { Download, Play } from "lucide-react";
+
+const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
 export function meta() {
     return [{ title: "Armonyx — History" }];
 }
 
-const tracks = [
-    {
-        id: 1,
-        title: "Dark Resolve",
-        prompt: "calm lofi beat with soft piano and rain sounds",
-        duration: "2:34",
-        date: "14 May",
-        genre: "lofi",
-        image: "https://static0.cbrimages.com/wordpress/wp-content/uploads/2020/04/Law.jpg?q=50&fit=crop&w=825&dpr=1.5",
-    },
-    {
-        id: 2,
-        title: "Last Stand",
-        prompt: "epic orchestral battle theme with heavy drums",
-        duration: "3:12",
-        date: "13 May",
-        genre: "epic",
-        image: "https://static0.cbrimages.com/wordpress/wp-content/uploads/2020/04/Law.jpg?q=50&fit=crop&w=825&dpr=1.5",
-    },
-    {
-        id: 3,
-        title: "Neon Drift",
-        prompt: "upbeat synthwave with 80s vibes and neon energy",
-        duration: "4:05",
-        date: "12 May",
-        genre: "synthwave",
-        image: "https://static0.cbrimages.com/wordpress/wp-content/uploads/2020/04/Law.jpg?q=50&fit=crop&w=825&dpr=1.5",
-    },
-    {
-        id: 4,
-        title: "Neon Drift",
-        prompt: "upbeat synthwave with 80s vibes and neon energy",
-        duration: "4:05",
-        date: "12 May",
-        genre: "synthwave",
-        image: "https://static0.cbrimages.com/wordpress/wp-content/uploads/2020/04/Law.jpg?q=50&fit=crop&w=825&dpr=1.5",
-    },
-    {
-        id: 5,
-        title: "Neon Drift",
-        prompt: "upbeat synthwave with 80s vibes and neon energy",
-        duration: "4:05",
-        date: "12 May",
-        genre: "synthwave",
-        image: "https://static0.cbrimages.com/wordpress/wp-content/uploads/2020/04/Law.jpg?q=50&fit=crop&w=825&dpr=1.5",
-    },
-];
+interface Job {
+    id: string;
+    theme?: string | null;
+    prompt?: string | null;
+    status?: string | null;
+    audio_url?: string | null;
+    image_url?: string | null;
+    created_at?: string | null;
+    duration?: string | null;
+    genre?: string | null;
+}
+
+function formatDate(value?: string | null) {
+    if (!value) {
+        return "Sem data";
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return "Sem data";
+    }
+
+    return date.toLocaleDateString("pt-PT", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+    });
+}
+
+function getTrackTitle(job: Job) {
+    return job.theme?.trim() || job.prompt?.trim() || "Untitled";
+}
+
+function getTrackPrompt(job: Job) {
+    return job.prompt?.trim() || job.theme?.trim() || "Sem descrição";
+}
 
 export default function History() {
+    const navigate = useNavigate();
+
+    const [jobs, setJobs] = useState<Job[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        let active = true;
+
+        async function loadHistory() {
+            try {
+                setLoading(true);
+                setError(null);
+
+                const response = await fetch(`${API_URL}/job/history`, {
+                    credentials: "include",
+                });
+
+                if (!response.ok) {
+                    throw new Error("Erro ao carregar o histórico.");
+                }
+
+                const data = await response.json();
+
+                if (!active) {
+                    return;
+                }
+
+                setJobs(data.jobs ?? []);
+            } catch (err) {
+                if (!active) {
+                    return;
+                }
+
+                const message =
+                    err instanceof Error
+                        ? err.message
+                        : "Erro ao carregar o histórico.";
+
+                setError(message);
+            } finally {
+                if (active) {
+                    setLoading(false);
+                }
+            }
+        }
+
+        loadHistory();
+
+        return () => {
+            active = false;
+        };
+    }, []);
+
     return (
         <div className="relative min-h-screen w-full overflow-x-hidden">
             <header className="absolute left-1/2 top-12 z-30 w-full -translate-x-1/2">
                 <div className="mx-auto flex max-w-7xl justify-center px-6">
-                    <img src="/assets/logo.png" alt="Logo" className="w-48 md:w-52" />
+                    <button
+                        type="button"
+                        onClick={() => navigate("/")}
+                        aria-label="Back to homepage"
+                        className="cursor-pointer rounded-xl transition-transform duration-200 hover:scale-105 active:scale-95"
+                    >
+                        <img
+                            src="/assets/logo.png"
+                            alt="Logo"
+                            className="w-48 md:w-52"
+                            draggable={false}
+                        />
+                    </button>
                 </div>
             </header>
 
             <main className="mx-auto w-full max-w-7xl px-6 pt-44 pb-20 md:px-10 lg:px-12">
                 <div className="mx-auto w-full max-w-5xl">
-                    <div className="flex items-center justify-between gap-4 flex-wrap">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
                         <div>
-                            <h1 className="text-4xl font-bold text-white md:text-5xl">History</h1>
-                            <p className="mt-2 text-sm text-zinc-500">{tracks.length} AMVs gerados</p>
+                            <h1 className="text-4xl font-bold text-white md:text-5xl">
+                                History
+                            </h1>
+
+                            <p className="mt-2 text-sm text-zinc-500">
+                                {loading
+                                    ? "A carregar histórico..."
+                                    : `${jobs.length} músicas geradas`}
+                            </p>
                         </div>
                     </div>
-                    <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
-                        {tracks.map((track) => (
-                            <div
-                                key={track.id}
-                                className="group rounded-2xl border border-yellow-400/30 bg-black/70 overflow-hidden backdrop-blur-xl shadow-xl shadow-yellow-500/5"
-                            >
-                                <div className="relative aspect-video overflow-hidden">
-                                    <img
-                                        src={track.image}
-                                        alt={track.title}
-                                        className="h-full w-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-105"
-                                    />
-                                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center">
-                                        <button className="flex h-12 w-12 items-center justify-center rounded-full bg-yellow-400 active:scale-95">
-                                            <Play size={20} className="text-black" />
-                                        </button>
-                                    </div>
-                                    <span className="absolute bottom-2 right-2 rounded-md bg-black/80 px-2 py-0.5 text-xs font-semibold text-white">
-                                        {track.duration}
-                                    </span>
-                                </div>
 
-                                <div className="p-4">
-                                    <div className="flex items-center justify-between gap-2">
-                                        <p className="truncate text-sm font-semibold text-white">{track.title}</p>
-                                        <span className="shrink-0 rounded-full border border-yellow-400/30 bg-yellow-400/10 px-2.5 py-0.5 text-xs font-semibold text-yellow-400">
-                                            {track.genre}
-                                        </span>
-                                    </div>
-                                    <p className="mt-1 truncate text-xs text-zinc-500">"{track.prompt}"</p>
+                    {loading && (
+                        <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+                            {[1, 2, 3, 4, 5, 6].map((item) => (
+                                <div
+                                    key={item}
+                                    className="h-72 animate-pulse rounded-2xl border border-yellow-400/20 bg-white/5"
+                                />
+                            ))}
+                        </div>
+                    )}
 
-                                    <div className="mt-3 flex items-center justify-between">
-                                        <span className="text-xs text-zinc-600">{track.date}</span>
-                                        <div className="flex gap-2">
-                                            <button className="flex h-8 w-8 items-center justify-center rounded-lg border border-yellow-400/20 bg-black/50 text-zinc-500 hover:border-yellow-400/50 hover:text-yellow-400 active:scale-95">
-                                                <Download size={14} />
-                                            </button>
+                    {!loading && error && (
+                        <div className="mt-10 rounded-2xl border border-red-400/30 bg-red-500/10 px-5 py-4 text-sm text-red-200">
+                            {error}
+                        </div>
+                    )}
+
+                    {!loading && !error && jobs.length === 0 && (
+                        <div className="mt-10 flex min-h-60 items-center justify-center rounded-2xl border border-yellow-400/20 bg-black/40 px-6 text-center">
+                            <p className="text-sm text-zinc-500">
+                                Ainda não tens músicas geradas.
+                            </p>
+                        </div>
+                    )}
+
+                    {!loading && !error && jobs.length > 0 && (
+                        <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+                            {jobs.map((job) => {
+                                const title = getTrackTitle(job);
+                                const prompt = getTrackPrompt(job);
+                                const image = job.image_url;
+                                const audioUrl = job.audio_url;
+
+                                return (
+                                    <div
+                                        key={job.id}
+                                        className="group overflow-hidden rounded-2xl border border-yellow-400/30 bg-black/70 shadow-xl shadow-yellow-500/5 backdrop-blur-xl"
+                                    >
+                                        <div className="relative aspect-video overflow-hidden bg-zinc-900">
+                                            {image ? (
+                                                <img
+                                                    src={image}
+                                                    alt={title}
+                                                    className="h-full w-full object-cover opacity-80 transition duration-300 group-hover:scale-105 group-hover:opacity-100"
+                                                />
+                                            ) : (
+                                                <div className="flex h-full w-full items-center justify-center px-4 text-center">
+                                                    <span className="text-xs text-zinc-500">
+                                                        {title}
+                                                    </span>
+                                                </div>
+                                            )}
+
+                                            <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition group-hover:opacity-100">
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        navigate("/app/generate", {
+                                                            state: { jobId: job.id },
+                                                        })
+                                                    }
+                                                    className="flex h-12 w-12 items-center justify-center rounded-full bg-yellow-400 active:scale-95"
+                                                >
+                                                    <Play
+                                                        size={20}
+                                                        className="text-black"
+                                                    />
+                                                </button>
+                                            </div>
+
+                                            <span className="absolute right-2 bottom-2 rounded-md bg-black/80 px-2 py-0.5 text-xs font-semibold text-white">
+                                                {job.duration || job.status || "ready"}
+                                            </span>
+                                        </div>
+
+                                        <div className="p-4">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <p className="truncate text-sm font-semibold text-white">
+                                                    {title}
+                                                </p>
+
+                                                <span className="shrink-0 rounded-full border border-yellow-400/30 bg-yellow-400/10 px-2.5 py-0.5 text-xs font-semibold text-yellow-400">
+                                                    {job.genre || job.status || "AI"}
+                                                </span>
+                                            </div>
+
+                                            <p className="mt-1 truncate text-xs text-zinc-500">
+                                                "{prompt}"
+                                            </p>
+
+                                            <div className="mt-3 flex items-center justify-between">
+                                                <span className="text-xs text-zinc-600">
+                                                    {formatDate(job.created_at)}
+                                                </span>
+
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            navigate("/app/generate", {
+                                                                state: { jobId: job.id },
+                                                            })
+                                                        }
+                                                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-yellow-400/20 bg-black/50 text-zinc-500 hover:border-yellow-400/50 hover:text-yellow-400 active:scale-95"
+                                                    >
+                                                        <Play size={14} />
+                                                    </button>
+
+                                                    {audioUrl && (
+                                                        <a
+                                                            href={audioUrl}
+                                                            download
+                                                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-yellow-400/20 bg-black/50 text-zinc-500 hover:border-yellow-400/50 hover:text-yellow-400 active:scale-95"
+                                                        >
+                                                            <Download size={14} />
+                                                        </a>
+                                                    )}
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
             </main>
         </div>

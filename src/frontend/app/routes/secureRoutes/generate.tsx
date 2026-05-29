@@ -300,8 +300,6 @@ export default function Generate() {
             const data = await res.json();
 
             setJobStatus(data.status);
-            // Atualizar sempre o jobMeta se houver dados — permite mostrar output parcial
-            // ao re-entrar num job que ainda estava em geração
             if (data.output_path || data.metadata) {
                 setJobMeta({
                     output_path: data.output_path ?? null,
@@ -330,7 +328,6 @@ export default function Generate() {
             if (!startRes.ok) throw new Error("Erro ao criar sessão.");
 
             const { job_id } = await startRes.json();
-            // Substituir o history entry para que, ao voltar atrás, o job seja carregado em vez de recriado
             navigate("/app/generate", { state: { jobId: job_id }, replace: true });
             await sendMessage(job_id, prompt);
             setJobId(job_id);
@@ -676,12 +673,12 @@ export default function Generate() {
                                         <div className="absolute -left-16 top-8 h-48 w-48 rounded-full bg-yellow-400/10 blur-3xl" />
                                         <div className="absolute -right-14 bottom-2 h-52 w-52 rounded-full bg-yellow-300/8 blur-3xl" />
                                         <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01)_30%,rgba(250,204,21,0.04)_100%)]" />
-                                        <div className="absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(250,204,21,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(250,204,21,0.08)_1px,transparent_1px)] [background-size:32px_32px]" />
+                                        <div className="absolute inset-0 opacity-20 bg-[linear-gradient(rgba(250,204,21,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(250,204,21,0.08)_1px,transparent_1px)] bg-size-[32px_32px]" />
 
                                         <div className="relative flex h-full flex-col p-8">
                                             <div className="flex flex-1 items-center justify-center">
                                                 {gen && jobStatus !== "GENERATING_IMAGES" && jobStatus !== "RENDERING" && (
-                                                    <div className="mx-auto flex h-[250px] w-full max-w-3xl items-center rounded-[26px] border border-yellow-400/20 bg-black/35 px-8 py-6 backdrop-blur-md">
+                                                    <div className="mx-auto flex h-62.5 w-full max-w-3xl items-center rounded-[26px] border border-yellow-400/20 bg-black/35 px-8 py-6 backdrop-blur-md">
                                                         <div className="flex w-full items-center justify-between gap-8">
                                                             <div className="flex min-w-0 items-center gap-5">
                                                                 <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-yellow-400/20 bg-yellow-400/10">
