@@ -19,14 +19,15 @@ const ASSISTANT_PERSONA =
  * Constrói o contexto a passar ao /classify-intent a partir do estado do job.
  */
 function buildContext(job = {}, metadata = {}) {
+    const generatingStatuses = ["PENDING", "GENERATING_PLAN", "GENERATING_AUDIO", "GENERATING_IMAGES", "RENDERING"];
     return {
         assistant_persona: ASSISTANT_PERSONA,
         title:             job.theme || null,
         has_plan:          !!metadata.creative_plan,
-        has_audio:         job.status === "done" || !!job.output_path,
+        has_audio:         job.status === "COMPLETED" && !!job.output_path,
         has_images:        !!(metadata.storyboard && metadata.storyboard.length > 0),
         has_video:         false,
-        generation_phase:  job.status === "running" ? job.current_step || "generating" : "idle",
+        generation_phase:  generatingStatuses.includes(job.status) ? (job.current_step || "generating") : "idle",
         conversation_summary: job.theme
             ? `O utilizador está a criar um AMV com o tema: "${job.theme}"`
             : null,
@@ -73,9 +74,18 @@ async function generatePlan(theme, style = "anime cinematic emotional", numScene
         { headers: headers(), timeout: 30000 }
     );
 
-    // Polling até done
-    const result = await pollJob(WORKER1_URL, r.data.job_id || jobId);
-    return result?.creative_plan || null;
+    const workerJobId = r.data.job_id || jobId;
+
+    // Polling até done (o resultado não vem no status)
+    await pollJob(WORKER1_URL, workerJobId);
+
+    // Buscar o plano no endpoint de resultado separado
+    const planRes = await axios.get(
+        `${WORKER1_URL}/result/${workerJobId}/plan`,
+        { headers: headers(), timeout: 15000 }
+    );
+
+    return planRes.data?.creative_plan || null;
 }
 
 /**

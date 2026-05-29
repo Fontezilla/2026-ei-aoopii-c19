@@ -100,7 +100,7 @@ async function handleMessage(jobId, conversationId, userMessage) {
 async function runGeneration(jobId, conversationId, intent, theme, style, durationSeconds, params = {}) {
     try {
         if (intent === "audio" || intent === "regenerate_audio") {
-            await runAudioOnly(jobId, conversationId, theme, durationSeconds);
+            await runAudioOnly(jobId, conversationId, theme, durationSeconds, style, params);
         } else if (intent === "plan") {
             await runPlanOnly(jobId, conversationId, theme, style, durationSeconds);
         } else {
@@ -118,20 +118,26 @@ async function runGeneration(jobId, conversationId, intent, theme, style, durati
 /**
  * Só áudio — usa o tema directamente como music_prompt, sem gerar plano.
  */
-async function runAudioOnly(jobId, conversationId, musicPrompt, durationSeconds) {
+async function runAudioOnly(jobId, conversationId, musicPrompt, durationSeconds, style = "", params = {}) {
     await updateJobStatus(jobId, JOB_STATUS.GENERATING_AUDIO, JOB_STEP.AUDIO);
     await logJob(jobId, JOB_STATUS.GENERATING_AUDIO, "A gerar áudio...");
     await addMessage(conversationId, "assistant", "🎵 A gerar a música...", "generating_audio");
 
     const audioJobId = `audio_${jobId.replace(/-/g, "_")}`;
-    const outputPath = await generateAudio(audioJobId, musicPrompt, durationSeconds);
+    const outputPath = await generateAudio(audioJobId, musicPrompt, durationSeconds, jobId);
 
-    await supabase.from("jobs").update({
-        status:       JOB_STATUS.COMPLETED,
-        current_step: JOB_STEP.AUDIO,
-        output_path:  outputPath,
-        completed_at: new Date().toISOString(),
-    }).eq("id", jobId);
+    // Guardar metadata básica para os cards do frontend
+    const genre = params.genre || params.style || style || musicPrompt.split(/[\s,]+/)[0] || "—";
+    await supabase.from("job_metadata").upsert({
+        job_id:       jobId,
+        music_prompt: musicPrompt,
+        settings: {
+            genre:    genre,
+            duration: `${durationSeconds}s`,
+            mood:     params.mood  || style || "—",
+            tempo:    params.tempo || "—",
+        },
+    });
 
     await logJob(jobId, JOB_STATUS.COMPLETED, "Áudio gerado.");
     await addMessage(
@@ -139,6 +145,13 @@ async function runAudioOnly(jobId, conversationId, musicPrompt, durationSeconds)
         "🎉 A tua música está pronta!",
         "done", { output_path: outputPath }
     );
+
+    await supabase.from("jobs").update({
+        status:       JOB_STATUS.COMPLETED,
+        current_step: JOB_STEP.AUDIO,
+        output_path:  outputPath,
+        completed_at: new Date().toISOString(),
+    }).eq("id", jobId);
 }
 
 /**
@@ -207,7 +220,7 @@ async function runFullPipeline(jobId, conversationId, theme, style, durationSeco
     const audioJobId = `audio_${jobId.replace(/-/g, "_")}`;
     let outputPath = null;
     try {
-        outputPath = await generateAudio(audioJobId, musicPrompt, durationSeconds);
+        outputPath = await generateAudio(audioJobId, musicPrompt, durationSeconds, jobId);
     } catch (err) {
         console.error("[Orchestrator] Erro no áudio:", err.message);
     }
@@ -220,7 +233,7 @@ async function runFullPipeline(jobId, conversationId, theme, style, durationSeco
 
         const imageJobId = `img_${jobId.replace(/-/g, "_")}`;
         try {
-            const sceneImages = await generateImages(imageJobId, imagePrompts);
+            const sceneImages = await generateImages(imageJobId, imagePrompts, jobId);
             if (sceneImages.length > 0) {
                 await supabase.from("job_metadata").update({ storyboard: sceneImages }).eq("job_id", jobId);
             }

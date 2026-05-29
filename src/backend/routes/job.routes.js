@@ -95,7 +95,7 @@ router.get("/:id/status", async (req, res) => {
 
         // Se done, incluir metadata
         let metadata = null;
-        if (job.status === "done") {
+        if (job.status === "COMPLETED") {
             const { data: meta } = await supabase
                 .from("job_metadata")
                 .select("music_prompt, settings, storyboard")
