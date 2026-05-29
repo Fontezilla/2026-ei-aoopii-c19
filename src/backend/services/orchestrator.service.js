@@ -60,13 +60,22 @@ async function handleMessage(jobId, conversationId, userMessage) {
 
     const { data: metadata } = await supabase
         .from("job_metadata")
-        .select("creative_plan, storyboard")
+        .select("creative_plan, storyboard, music_prompt, settings")
         .eq("job_id", jobId)
         .single();
 
+    // Histórico recente da conversa para dar contexto à AI (últimas 10 mensagens)
+    const { data: recentMessages } = await supabase
+        .from("messages")
+        .select("role, content, action")
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: false })
+        .limit(10);
+    const conversationHistory = (recentMessages || []).reverse();
+
     let classification;
     try {
-        classification = await classifyAndReply(userMessage, job || {}, metadata || {});
+        classification = await classifyAndReply(userMessage, job || {}, metadata || {}, conversationHistory);
     } catch (err) {
         console.error("[Orchestrator] Erro no classify-intent:", err.message);
         const reply = "Ocorreu um erro ao processar a tua mensagem. Tenta novamente.";

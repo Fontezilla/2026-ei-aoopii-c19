@@ -18,16 +18,27 @@ const ASSISTANT_PERSONA =
 /**
  * Constrói o contexto a passar ao /classify-intent a partir do estado do job.
  */
-function buildContext(job = {}, metadata = {}) {
+function buildContext(job = {}, metadata = {}, conversationHistory = []) {
     const generatingStatuses = ["PENDING", "GENERATING_PLAN", "GENERATING_AUDIO", "GENERATING_IMAGES", "RENDERING"];
+
+    // Filtrar mensagens de progresso internas (não relevantes para a AI)
+    const PROGRESS_ACTIONS = new Set(["planning", "generating_audio", "generating_images", "rendering"]);
+    const history = conversationHistory
+        .filter(m => !PROGRESS_ACTIONS.has(m.action))
+        .map(m => ({ role: m.role, content: m.content }));
+
     return {
         assistant_persona: ASSISTANT_PERSONA,
         title:             job.theme || null,
         has_plan:          !!metadata.creative_plan,
-        has_audio:         job.status === "COMPLETED" && !!job.output_path,
+        has_audio:         !!job.output_path,                                    // existe áudio sempre que output_path estiver preenchido
         has_images:        !!(metadata.storyboard && metadata.storyboard.length > 0),
         has_video:         false,
+        current_status:    job.status || "idle",
         generation_phase:  generatingStatuses.includes(job.status) ? (job.current_step || "generating") : "idle",
+        music_prompt:      metadata.music_prompt || null,                         // o que foi gerado de música
+        settings:          metadata.settings     || null,                         // tempo, genre, mood, duration
+        conversation_history: history,                                            // histórico para a AI ter contexto do q foi dito
         conversation_summary: job.theme
             ? `O utilizador está a criar um AMV com o tema: "${job.theme}"`
             : null,
@@ -38,8 +49,8 @@ function buildContext(job = {}, metadata = {}) {
  * Classifica a intenção de uma mensagem e devolve resposta do assistente.
  * Retorna: { intent, params, response_text }
  */
-async function classifyAndReply(userMessage, job = {}, metadata = {}) {
-    const context = buildContext(job, metadata);
+async function classifyAndReply(userMessage, job = {}, metadata = {}, conversationHistory = []) {
+    const context = buildContext(job, metadata, conversationHistory);
 
     const r = await axios.post(
         `${WORKER1_URL}/classify-intent`,
