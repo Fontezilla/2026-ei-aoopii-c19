@@ -60,13 +60,22 @@ async function handleMessage(jobId, conversationId, userMessage) {
 
     const { data: metadata } = await supabase
         .from("job_metadata")
-        .select("creative_plan, storyboard")
+        .select("creative_plan, storyboard, music_prompt, settings")
         .eq("job_id", jobId)
         .single();
 
+    // Histórico recente da conversa para dar contexto à AI (últimas 10 mensagens)
+    const { data: recentMessages } = await supabase
+        .from("messages")
+        .select("role, content, action")
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: false })
+        .limit(10);
+    const conversationHistory = (recentMessages || []).reverse();
+
     let classification;
     try {
-        classification = await classifyAndReply(userMessage, job || {}, metadata || {});
+        classification = await classifyAndReply(userMessage, job || {}, metadata || {}, conversationHistory);
     } catch (err) {
         console.error("[Orchestrator] Erro no classify-intent:", err.message);
         const reply = "Ocorreu um erro ao processar a tua mensagem. Tenta novamente.";
@@ -127,14 +136,14 @@ async function runAudioOnly(jobId, conversationId, musicPrompt, durationSeconds,
     const outputPath = await generateAudio(audioJobId, musicPrompt, durationSeconds, jobId);
 
     // Guardar metadata básica para os cards do frontend
-    const genre = params.genre || params.style || style || musicPrompt.split(/[\s,]+/)[0] || "—";
+    // genre e mood vêm dos params do Qwen; só usar style como último recurso e apenas para genre
     await supabase.from("job_metadata").upsert({
         job_id:       jobId,
         music_prompt: musicPrompt,
         settings: {
-            genre:    genre,
+            genre:    params.genre || "—",
             duration: `${durationSeconds}s`,
-            mood:     params.mood  || style || "—",
+            mood:     params.mood  || "—",
             tempo:    params.tempo || "—",
         },
     });
@@ -169,7 +178,6 @@ async function runPlanOnly(jobId, conversationId, theme, style, durationSeconds)
         job_id:        jobId,
         creative_plan: plan,
         music_prompt:  plan.music_prompt || theme,
-        image_prompts: (plan.storyboard || []).map((s) => s.image_prompt).filter(Boolean),
         settings:      plan.settings || {},
     });
 
@@ -207,7 +215,6 @@ async function runFullPipeline(jobId, conversationId, theme, style, durationSeco
         job_id:        jobId,
         creative_plan: plan,
         music_prompt:  musicPrompt,
-        image_prompts: imagePrompts,
         settings:      plan.settings || {},
     });
     await supabase.from("jobs").update({ theme }).eq("id", jobId);

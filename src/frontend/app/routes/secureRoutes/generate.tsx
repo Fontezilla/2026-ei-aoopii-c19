@@ -160,13 +160,15 @@ export default function Generate() {
             const data = await res.json();
 
             setJobStatus(data.status);
-
-            if (data.status === "COMPLETED" || data.status === "FAILED") {
+            // Atualizar sempre o jobMeta se houver dados — permite mostrar output parcial
+            // ao re-entrar num job que ainda estava em geração
+            if (data.output_path || data.metadata) {
                 setJobMeta({
                     output_path: data.output_path ?? null,
                     ...(data.metadata ?? {}),
                 });
-
+            }
+            if (data.status === "COMPLETED" || data.status === "FAILED") {
                 loadMessages(jid);
             }
         } catch {
@@ -188,7 +190,8 @@ export default function Generate() {
             if (!startRes.ok) throw new Error("Erro ao criar sessão.");
 
             const { job_id } = await startRes.json();
-
+            // Substituir o history entry para que, ao voltar atrás, o job seja carregado em vez de recriado
+            navigate("/app/generate", { state: { jobId: job_id }, replace: true });
             await sendMessage(job_id, prompt);
             setJobId(job_id);
         } catch (err) {
