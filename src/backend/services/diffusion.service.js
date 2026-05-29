@@ -1,6 +1,6 @@
 const axios = require("axios");
-const fs    = require("fs");
-const path  = require("path");
+const fs = require("fs");
+const path = require("path");
 
 const WORKER2_URL = process.env.WORKER2_URL;
 const WORKER2_KEY = process.env.WORKER2_KEY || "";
@@ -10,14 +10,6 @@ const headers = () => ({
     ...(WORKER2_URL && WORKER2_KEY ? { "X-Worker-Key": WORKER2_KEY } : {}),
 });
 
-/**
- * Gera imagens de cenas a partir de prompts.
- * workerJobId — ID enviado ao worker
- * imagePrompts — array de strings, uma por cena
- * parentJobId  — UUID do job na DB; define a pasta em outputs/<parentJobId>/images/
- *
- * Retorna array de { scene_index, image_path } (path relativo a outputs/)
- */
 async function generateImages(workerJobId, imagePrompts, parentJobId) {
     if (!WORKER2_URL) {
         console.warn("[Diffusion] WORKER2_URL não configurado — a saltar geração de imagens");
@@ -43,10 +35,9 @@ async function generateImages(workerJobId, imagePrompts, parentJobId) {
         { headers: headers(), timeout: 30000 }
     );
 
-    const scenes = r.data.scenes || []; // [{ scene_index, image_base64 }]
+    const scenes = r.data.scenes || [];
 
-    // Guardar imagens em disco: outputs/<parentJobId>/images/scene_XX.png
-    const folder   = parentJobId || workerJobId;
+    const folder = parentJobId || workerJobId;
     const imageDir = path.join(__dirname, "../outputs", folder, "images");
     if (!fs.existsSync(imageDir)) fs.mkdirSync(imageDir, { recursive: true });
 
@@ -60,7 +51,7 @@ async function generateImages(workerJobId, imagePrompts, parentJobId) {
 
         return {
             scene_index: scene.scene_index,
-            image_path:  `${folder}/images/${filename}`,
+            image_path: `${folder}/images/${filename}`,
         };
     });
 }

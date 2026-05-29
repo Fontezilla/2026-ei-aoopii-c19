@@ -61,7 +61,7 @@ export const authService = {
         return this.getStoredUser() !== null;
     },
 
-    async login(email: string, password: string) {
+    async login(email: string, password: string): Promise<AuthResponse> {
         const res = await fetch(`${API_URL}/auth/login`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -74,6 +74,7 @@ export const authService = {
         }
 
         const data = (await res.json()) as AuthResponse;
+
         saveUser(data.user);
         meRequest = Promise.resolve(data.user);
 
@@ -85,7 +86,7 @@ export const authService = {
         email: string,
         password: string,
         confirm_password: string
-    ) {
+    ): Promise<AuthResponse> {
         const res = await fetch(`${API_URL}/auth/register`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -103,13 +104,14 @@ export const authService = {
         }
 
         const data = (await res.json()) as AuthResponse;
+
         saveUser(data.user);
         meRequest = Promise.resolve(data.user);
 
         return data;
     },
 
-    async logout() {
+    async logout(): Promise<void> {
         try {
             await fetch(`${API_URL}/auth/logout`, {
                 method: "POST",
@@ -136,9 +138,11 @@ export const authService = {
                 }
 
                 const data = await res.json();
-                saveUser(data.user);
+                const user = data.user as AuthUser;
 
-                return data.user as AuthUser;
+                saveUser(user);
+
+                return user;
             })
             .catch(() => {
                 clearUser();
@@ -149,5 +153,28 @@ export const authService = {
             });
 
         return meRequest;
+    },
+
+    async updateAvatar(file: File): Promise<AuthUser> {
+        const formData = new FormData();
+        formData.append("avatar", file);
+
+        const res = await fetch(`${API_URL}/auth/avatar`, {
+            method: "PATCH",
+            credentials: "include",
+            body: formData,
+        });
+
+        if (!res.ok) {
+            throw new Error(await getErrorMessage(res, "Erro ao atualizar avatar."));
+        }
+
+        const data = await res.json();
+        const user = data.user as AuthUser;
+
+        saveUser(user);
+        meRequest = Promise.resolve(user);
+
+        return user;
     },
 };

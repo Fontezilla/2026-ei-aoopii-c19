@@ -1,9 +1,34 @@
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { ArrowRight, AudioLines, Play } from "lucide-react";
+import { ArrowRight, AudioLines, Camera, LogOut, Play } from "lucide-react";
+import { authService, type AuthUser } from "~/services/authService";
 
 export function meta() {
     return [{ title: "Armonyx" }];
+}
+
+const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
+
+interface Job {
+    id: string;
+    theme?: string | null;
+    prompt?: string | null;
+    status?: string | null;
+}
+
+function getUserDisplayName(user: AuthUser | null) {
+    return (
+        user?.username?.trim() ||
+        user?.email?.split("@")[0]?.trim() ||
+        "User"
+    );
+}
+
+function getFirstNameInitial(user: AuthUser | null) {
+    const displayName = getUserDisplayName(user);
+    const firstName = displayName.split(" ").filter(Boolean)[0];
+
+    return firstName?.charAt(0).toUpperCase() || "U";
 }
 
 export default function Home() {
@@ -11,22 +36,37 @@ export default function Home() {
     const [prompt, setPrompt] = useState("");
 
     const handleGenerate = () => {
-        if (!prompt.trim()) return;
-        navigate("/app/generate", { state: { initialPrompt: prompt.trim() } });
+        const cleanPrompt = prompt.trim();
+
+        if (!cleanPrompt) {
+            return;
+        }
+
+        navigate("/app/generate", {
+            state: { initialPrompt: cleanPrompt },
+        });
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            handleGenerate();
+        if (e.key !== "Enter" || e.shiftKey) {
+            return;
         }
+
+        e.preventDefault();
+        handleGenerate();
     };
 
     return (
         <div className="relative min-h-screen w-full overflow-x-hidden">
+            <UserMenu />
+
             <header className="absolute left-1/2 top-12 z-30 w-full -translate-x-1/2">
                 <div className="mx-auto flex max-w-7xl justify-center px-6">
-                    <img src="assets/logo.png" alt="Logo" className="w-48 md:w-52" />
+                    <img
+                        src="/assets/logo.png"
+                        alt="Logo"
+                        className="w-48 md:w-52"
+                    />
                 </div>
             </header>
 
@@ -36,6 +76,7 @@ export default function Home() {
                         Create your next{" "}
                         <span className="text-yellow-400">masterpiece</span>
                     </h1>
+
                     <p className="mt-4 text-base text-zinc-400 sm:text-lg">
                         Describe your idea and let Armonyx compose a unique track for you.
                     </p>
@@ -49,12 +90,13 @@ export default function Home() {
                             placeholder="Describe the music you want to create..."
                             className="block min-h-12 max-h-36 w-full resize-none bg-transparent px-4 py-3 text-base text-white placeholder:text-zinc-500 focus:outline-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden field-sizing-content"
                         />
+
                         <div className="flex justify-end p-1">
                             <button
                                 type="button"
                                 onClick={handleGenerate}
                                 disabled={!prompt.trim()}
-                                className="flex h-10 w-full items-center justify-center gap-2 rounded-full bg-yellow-400 px-6 text-sm font-bold text-black hover:bg-yellow-300 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed sm:w-40"
+                                className="flex h-10 w-full items-center justify-center gap-2 rounded-full bg-yellow-400 px-6 text-sm font-bold text-black hover:bg-yellow-300 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 sm:w-40"
                             >
                                 <AudioLines size={16} />
                                 Generate
@@ -64,6 +106,7 @@ export default function Home() {
 
                     <div className="mt-8 flex w-full flex-col gap-6 lg:flex-row lg:items-center">
                         <RecentTracks />
+
                         <div className="flex justify-center lg:justify-start">
                             <Link
                                 to="/app/history"
@@ -81,23 +124,211 @@ export default function Home() {
     );
 }
 
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
+function UserMenu() {
+    const navigate = useNavigate();
+    const menuRef = useRef<HTMLDivElement | null>(null);
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+    const [open, setOpen] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [uploadingAvatar, setUploadingAvatar] = useState(false);
+    const [user, setUser] = useState<AuthUser | null>(() => authService.getStoredUser());
+
+    useEffect(() => {
+        setUser(authService.getStoredUser());
+    }, []);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (!menuRef.current) {
+                return;
+            }
+
+            if (!menuRef.current.contains(event.target as Node)) {
+                setOpen(false);
+            }
+        };
+
+        const handleEscape = (event: KeyboardEvent) => {
+            if (event.key === "Escape") {
+                setOpen(false);
+            }
+        };
+
+        document.addEventListener("mousedown", handleClickOutside);
+        document.addEventListener("keydown", handleEscape);
+
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+            document.removeEventListener("keydown", handleEscape);
+        };
+    }, []);
+
+    const handleAvatarChange = async (
+        event: React.ChangeEvent<HTMLInputElement>
+    ) => {
+        const file = event.target.files?.[0];
+
+        if (!file) {
+            return;
+        }
+
+        if (!file.type.startsWith("image/")) {
+            alert("Seleciona uma imagem válida.");
+            event.target.value = "";
+            return;
+        }
+
+        setUploadingAvatar(true);
+
+        try {
+            const updatedUser = await authService.updateAvatar(file);
+            setUser(updatedUser);
+        } catch (error) {
+            const message =
+                error instanceof Error
+                    ? error.message
+                    : "Erro ao atualizar avatar.";
+
+            alert(message);
+        } finally {
+            setUploadingAvatar(false);
+            event.target.value = "";
+        }
+    };
+
+    const handleSignOut = async () => {
+        if (loading) {
+            return;
+        }
+
+        setLoading(true);
+
+        try {
+            await authService.logout();
+            navigate("/signin", { replace: true });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const displayName = getUserDisplayName(user);
+    const initial = getFirstNameInitial(user);
+
+    return (
+        <div ref={menuRef} className="absolute right-6 top-8 z-40 md:right-10">
+            <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={handleAvatarChange}
+            />
+
+            <button
+                type="button"
+                onClick={() => setOpen((prev) => !prev)}
+                className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full border border-yellow-400/70 bg-black/75 text-sm font-bold text-yellow-400 shadow-lg shadow-yellow-500/10 backdrop-blur-xl transition hover:border-yellow-400 hover:bg-yellow-400 hover:text-black active:scale-95"
+                aria-haspopup="menu"
+                aria-expanded={open}
+                aria-label="Open user menu"
+            >
+                {user?.avatar_url ? (
+                    <img
+                        src={user.avatar_url}
+                        alt="Avatar"
+                        className="h-full w-full object-cover"
+                    />
+                ) : (
+                    <span>{initial}</span>
+                )}
+            </button>
+
+            {open && (
+                <div
+                    role="menu"
+                    className="absolute right-0 mt-3 w-64 overflow-hidden rounded-2xl border border-yellow-400/20 bg-black/90 p-2 shadow-2xl shadow-yellow-500/10 backdrop-blur-xl"
+                >
+                    <div className="border-b border-white/10 px-3 py-3">
+                        <div className="flex items-center gap-3">
+                            <button
+                                type="button"
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={uploadingAvatar}
+                                className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-yellow-400/40 bg-yellow-400 text-sm font-bold text-black disabled:cursor-not-allowed disabled:opacity-60"
+                                aria-label="Change avatar"
+                            >
+                                {user?.avatar_url ? (
+                                    <img
+                                        src={user.avatar_url}
+                                        alt="Avatar"
+                                        className="h-full w-full object-cover"
+                                    />
+                                ) : (
+                                    <span>{initial}</span>
+                                )}
+
+                                <span className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition hover:opacity-100">
+                                    <Camera size={16} className="text-white" />
+                                </span>
+                            </button>
+
+                            <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-white">
+                                    {displayName}
+                                </p>
+
+                                {user?.email && (
+                                    <p className="truncate text-xs text-zinc-500">
+                                        {user.email}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadingAvatar}
+                        className="mt-2 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium text-zinc-300 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                        <Camera size={16} className="text-yellow-400" />
+                        {uploadingAvatar ? "Uploading..." : "Change photo"}
+                    </button>
+
+                    <button
+                        type="button"
+                        role="menuitem"
+                        onClick={handleSignOut}
+                        disabled={loading}
+                        className="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium text-zinc-300 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                        <LogOut size={16} className="text-yellow-400" />
+                        {loading ? "Signing out..." : "Sign out"}
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}
 
 function RecentTracks() {
     const navigate = useNavigate();
-    const [jobs, setJobs] = useState<any[]>([]);
+
+    const [jobs, setJobs] = useState<Job[]>([]);
     const [loaded, setLoaded] = useState(false);
 
     useEffect(() => {
         let active = true;
 
         fetch(`${API_URL}/job/history`, { credentials: "include" })
-            .then((r) => {
-                if (!r.ok) {
+            .then((response) => {
+                if (!response.ok) {
                     throw new Error("Erro ao carregar histórico.");
                 }
 
-                return r.json();
+                return response.json();
             })
             .then((data) => {
                 if (!active) {
@@ -123,9 +354,9 @@ function RecentTracks() {
     if (!loaded) {
         return (
             <div className="grid flex-1 grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {[1, 2, 3].map((i) => (
+                {[1, 2, 3].map((item) => (
                     <div
-                        key={i}
+                        key={item}
                         className="h-52 animate-pulse rounded-2xl border border-yellow-400/20 bg-white/5"
                     />
                 ))}
@@ -152,12 +383,12 @@ function RecentTracks() {
                 >
                     <div className="flex h-40 items-center justify-center overflow-hidden rounded-xl bg-zinc-900">
                         <span className="text-xs text-zinc-500">
-                            {job.theme || "Untitled"}
+                            {job.theme || job.prompt || "Untitled"}
                         </span>
                     </div>
 
                     <p className="mt-2 truncate px-1 text-sm font-medium text-zinc-300">
-                        {job.theme || "Untitled"}
+                        {job.theme || job.prompt || "Untitled"}
                     </p>
 
                     <div className="mt-2 flex justify-center">

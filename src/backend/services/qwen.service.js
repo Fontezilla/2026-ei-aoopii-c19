@@ -15,13 +15,9 @@ const ASSISTANT_PERSONA =
     "Quando o utilizador descreve um tema ou mood, interpretas criativamente e sugeres direcções. " +
     "Quando a geração começa, mantens o utilizador informado do progresso de forma envolvente.";
 
-/**
- * Constrói o contexto a passar ao /classify-intent a partir do estado do job.
- */
 function buildContext(job = {}, metadata = {}, conversationHistory = []) {
     const generatingStatuses = ["PENDING", "GENERATING_PLAN", "GENERATING_AUDIO", "GENERATING_IMAGES", "RENDERING"];
 
-    // Filtrar mensagens de progresso internas (não relevantes para a AI)
     const PROGRESS_ACTIONS = new Set(["planning", "generating_audio", "generating_images", "rendering"]);
     const history = conversationHistory
         .filter(m => !PROGRESS_ACTIONS.has(m.action))
@@ -29,26 +25,22 @@ function buildContext(job = {}, metadata = {}, conversationHistory = []) {
 
     return {
         assistant_persona: ASSISTANT_PERSONA,
-        title:             job.theme || null,
-        has_plan:          !!metadata.creative_plan,
-        has_audio:         !!job.output_path,                                    // existe áudio sempre que output_path estiver preenchido
-        has_images:        !!(metadata.storyboard && metadata.storyboard.length > 0),
-        has_video:         false,
-        current_status:    job.status || "idle",
-        generation_phase:  generatingStatuses.includes(job.status) ? (job.current_step || "generating") : "idle",
-        music_prompt:      metadata.music_prompt || null,                         // o que foi gerado de música
-        settings:          metadata.settings     || null,                         // tempo, genre, mood, duration
-        conversation_history: history,                                            // histórico para a AI ter contexto do q foi dito
+        title: job.theme || null,
+        has_plan: !!metadata.creative_plan,
+        has_audio: !!job.output_path,
+        has_images: !!(metadata.storyboard && metadata.storyboard.length > 0),
+        has_video: false,
+        current_status: job.status || "idle",
+        generation_phase: generatingStatuses.includes(job.status) ? (job.current_step || "generating") : "idle",
+        music_prompt: metadata.music_prompt || null,
+        settings: metadata.settings || null,
+        conversation_history: history,
         conversation_summary: job.theme
             ? `O utilizador está a criar um AMV com o tema: "${job.theme}"`
             : null,
     };
 }
 
-/**
- * Classifica a intenção de uma mensagem e devolve resposta do assistente.
- * Retorna: { intent, params, response_text }
- */
 async function classifyAndReply(userMessage, job = {}, metadata = {}, conversationHistory = []) {
     const context = buildContext(job, metadata, conversationHistory);
 
@@ -59,27 +51,23 @@ async function classifyAndReply(userMessage, job = {}, metadata = {}, conversati
     );
 
     const result = r.data;
-    result.intent        = result.intent        || "chat";
-    result.params        = result.params        || {};
+    result.intent = result.intent || "chat";
+    result.params = result.params || {};
     result.response_text = result.response_text || "Como posso ajudar?";
 
     return result;
 }
 
-/**
- * Gera um plano criativo completo (music_prompt, storyboard, etc.)
- * Retorna o plano quando o job do worker estiver done.
- */
 async function generatePlan(theme, style = "anime cinematic emotional", numScenes = 12, musicDuration = 60) {
     const jobId = `plan_${Date.now()}`;
 
     const r = await axios.post(
         `${WORKER1_URL}/generate-plan`,
         {
-            job_id:         jobId,
-            theme:          theme && theme.length >= 3 ? theme : `AMV ${theme || "anime"}`,
+            job_id: jobId,
+            theme: theme && theme.length >= 3 ? theme : `AMV ${theme || "anime"}`,
             style,
-            num_scenes:     Math.round(Number(numScenes))    || 12,
+            num_scenes: Math.round(Number(numScenes)) || 12,
             music_duration: Math.round(Number(musicDuration)) || 60,
         },
         { headers: headers(), timeout: 30000 }
@@ -87,10 +75,8 @@ async function generatePlan(theme, style = "anime cinematic emotional", numScene
 
     const workerJobId = r.data.job_id || jobId;
 
-    // Polling até done (o resultado não vem no status)
     await pollJob(WORKER1_URL, workerJobId);
 
-    // Buscar o plano no endpoint de resultado separado
     const planRes = await axios.get(
         `${WORKER1_URL}/result/${workerJobId}/plan`,
         { headers: headers(), timeout: 15000 }
@@ -99,9 +85,6 @@ async function generatePlan(theme, style = "anime cinematic emotional", numScene
     return planRes.data?.creative_plan || null;
 }
 
-/**
- * Polling genérico ao /status/:job_id do worker.
- */
 async function pollJob(baseUrl, jobId, timeoutMs = 300000) {
     const deadline = Date.now() + timeoutMs;
 
@@ -112,8 +95,8 @@ async function pollJob(baseUrl, jobId, timeoutMs = 300000) {
             { headers: headers(), timeout: 10000 }
         );
         const { status, error } = r.data;
-        if (status === "done")   return r.data.result || r.data;
-        if (status === "error")  throw new Error(error || "Erro no worker");
+        if (status === "done") return r.data.result || r.data;
+        if (status === "error") throw new Error(error || "Erro no worker");
     }
 
     throw new Error("Timeout a aguardar o Qwen");

@@ -89,6 +89,87 @@ const register = async (req, res) => {
     }
 };
 
+const updateAvatar = async (req, res) => {
+    try {
+        const file = req.file;
+        const userId = req.user.sub;
+
+        if (!file) {
+            return res.status(400).json({
+                message: "Nenhuma imagem enviada.",
+            });
+        }
+
+        const extensionByMime = {
+            "image/jpeg": "jpg",
+            "image/png": "png",
+            "image/webp": "webp",
+        };
+
+        const fileExtension = extensionByMime[file.mimetype];
+
+        if (!fileExtension) {
+            return res.status(400).json({
+                message: "Formato de imagem inválido.",
+            });
+        }
+
+        const filePath = `${userId}/avatar.${fileExtension}`;
+
+        const { error: uploadError } = await supabase.storage
+            .from("avatars")
+            .upload(filePath, file.buffer, {
+                contentType: file.mimetype,
+                upsert: true,
+            });
+
+        if (uploadError) {
+            return res.status(500).json({
+                message: "Erro ao fazer upload do avatar.",
+                error: uploadError.message,
+            });
+        }
+
+        const { data: publicUrlData } = supabase.storage
+            .from("avatars")
+            .getPublicUrl(filePath);
+
+        const avatarUrl = `${publicUrlData.publicUrl}?v=${Date.now()}`;
+
+        const { data: profile, error: profileError } = await supabase
+            .from("profiles")
+            .update({
+                avatar_url: avatarUrl,
+                updated_at: new Date().toISOString(),
+            })
+            .eq("id", userId)
+            .select("username, avatar_url")
+            .single();
+
+        if (profileError) {
+            return res.status(500).json({
+                message: "Erro ao atualizar perfil.",
+                error: profileError.message,
+            });
+        }
+
+        return res.status(200).json({
+            message: "Avatar atualizado com sucesso.",
+            user: {
+                id: userId,
+                email: req.user.email,
+                username: profile.username,
+                avatar_url: profile.avatar_url,
+            },
+        });
+    } catch (error) {
+        return res.status(500).json({
+            message: "Erro interno ao atualizar avatar.",
+            error: error.message,
+        });
+    }
+};
+
 const login = async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -161,4 +242,4 @@ const me = async (req, res) => {
     });
 };
 
-module.exports = { login, register, logout, me };
+module.exports = { login, register, logout, me, updateAvatar };

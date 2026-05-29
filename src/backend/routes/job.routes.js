@@ -4,14 +4,8 @@ const supabase = require("../configs/supabase");
 const { createJob, handleMessage } = require("../services/orchestrator.service");
 const { requireAuth } = require("../middlewares/auth.middleware");
 
-// Todas as rotas de job requerem autenticação
 router.use(requireAuth);
 
-/**
- * POST /job/start
- * Cria um novo job e conversa.
- * Body: { theme? }
- */
 router.post("/start", async (req, res) => {
     try {
         const { theme = "" } = req.body;
@@ -26,11 +20,6 @@ router.post("/start", async (req, res) => {
     }
 });
 
-/**
- * POST /job/:id/message
- * Envia mensagem ao chat. Dispara geração se necessário.
- * Body: { message }
- */
 router.post("/:id/message", async (req, res) => {
     try {
         const jobId = req.params.id;
@@ -40,7 +29,6 @@ router.post("/:id/message", async (req, res) => {
             return res.status(400).json({ message: "Mensagem em falta." });
         }
 
-        // Verificar que o job pertence ao utilizador
         const { data: job, error } = await supabase
             .from("jobs")
             .select("id, status")
@@ -52,7 +40,6 @@ router.post("/:id/message", async (req, res) => {
             return res.status(404).json({ message: "Job não encontrado." });
         }
 
-        // Buscar conversation_id
         const { data: conv } = await supabase
             .from("conversations")
             .select("id")
@@ -76,10 +63,6 @@ router.post("/:id/message", async (req, res) => {
     }
 });
 
-/**
- * GET /job/:id/status
- * Estado actual do job (polling do frontend).
- */
 router.get("/:id/status", async (req, res) => {
     try {
         const { data: job, error } = await supabase
@@ -93,7 +76,6 @@ router.get("/:id/status", async (req, res) => {
             return res.status(404).json({ message: "Job não encontrado." });
         }
 
-        // Incluir sempre metadata (pode haver output parcial a meio da geração)
         const { data: meta } = await supabase
             .from("job_metadata")
             .select("music_prompt, settings, storyboard")
@@ -108,10 +90,6 @@ router.get("/:id/status", async (req, res) => {
     }
 });
 
-/**
- * GET /job/:id/messages
- * Histórico de mensagens da conversa.
- */
 router.get("/:id/messages", async (req, res) => {
     try {
         const { data: conv } = await supabase
@@ -137,10 +115,6 @@ router.get("/:id/messages", async (req, res) => {
     }
 });
 
-/**
- * GET /job/history
- * Lista de jobs do utilizador (para a página /app/history).
- */
 router.get("/history", async (req, res) => {
     try {
         const { data: jobs, error } = await supabase

@@ -3,7 +3,6 @@ const path = require("path");
 const express = require("express");
 const cookieParser = require("cookie-parser");
 
-// ── Carregar .env ─────────────────────────────────────────────────────────────
 const envPath = path.join(__dirname, ".env");
 if (fs.existsSync(envPath)) {
     fs.readFileSync(envPath, "utf8")
@@ -19,11 +18,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
 
-// ── Rotas ─────────────────────────────────────────────────────────────────────
 const authRoutes = require("./routes/auth.routes");
 const jobRoutes = require("./routes/job.routes");
 
-// ── CORS ──────────────────────────────────────────────────────────────────────
 app.use((req, res, next) => {
     res.header("Access-Control-Allow-Origin", CLIENT_URL);
     res.header("Access-Control-Allow-Credentials", "true");
@@ -35,22 +32,18 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(cookieParser());
 
-// ── Endpoints ─────────────────────────────────────────────────────────────────
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 app.use("/auth", authRoutes);
 app.use("/job", jobRoutes);
 
-// Servir ficheiros de áudio gerados
 app.use("/outputs", express.static(path.join(__dirname, "outputs")));
 
-// ── Erros ─────────────────────────────────────────────────────────────────────
 app.use((req, res) => res.status(404).json({ message: "Rota não encontrada." }));
 app.use((err, req, res, next) => {
     console.error(err);
     res.status(500).json({ message: "Erro interno do servidor." });
 });
 
-// ── Arrancar ──────────────────────────────────────────────────────────────────
 const server = app.listen(PORT, () => {
     console.log(`Backend a correr em http://localhost:${PORT}`);
 });

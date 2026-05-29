@@ -10,20 +10,12 @@ const headers = () => ({
     ...(WORKER1_KEY ? { "X-Worker-Key": WORKER1_KEY } : {}),
 });
 
-/**
- * Gera áudio a partir de um prompt.
- * Retorna o path local do ficheiro WAV guardado.
- */
-/**
- * workerJobId — ID único enviado ao worker (não tem de ser o UUID do job)
- * parentJobId — UUID do job na DB; define a pasta em outputs/
- */
 async function generateAudio(workerJobId, musicPrompt, durationSeconds = 30, parentJobId) {
     await axios.post(
         `${WORKER1_URL}/generate-audio`,
         {
-            job_id:           workerJobId,
-            music_prompt:     musicPrompt,
+            job_id: workerJobId,
+            music_prompt: musicPrompt,
             duration_seconds: Math.round(Number(durationSeconds)) || 30,
         },
         { headers: headers(), timeout: 30000 }
@@ -40,7 +32,7 @@ async function generateAudio(workerJobId, musicPrompt, durationSeconds = 30, par
         }
     );
 
-    const folder    = parentJobId || workerJobId;
+    const folder = parentJobId || workerJobId;
     const outputDir = path.join(__dirname, "../outputs", folder);
     if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
 
