@@ -71,7 +71,11 @@ async function handleMessage(jobId, conversationId, userMessage) {
     } catch (err) {
         console.error("[Orchestrator] Erro no classify-intent:", err.message);
         const reply = "Ocorreu um erro ao processar a tua mensagem. Tenta novamente.";
-        await addMessage(conversationId, "assistant", reply, "chat");
+        await addMessage(conversationId, "assistant", reply, "error");
+        // Garantir que o job não fica preso em PENDING quando o classify falha
+        if (job?.status === "PENDING") {
+            await updateJobStatus(jobId, JOB_STATUS.FAILED, null, err.message);
+        }
         return { intent: "error", reply };
     }
 
@@ -119,6 +123,12 @@ async function runAudioOnly(jobId, conversationId, musicPrompt, durationSeconds,
 
     const audioJobId = `audio_${jobId.replace(/-/g, "_")}`;
     const outputPath = await generateAudio(audioJobId, musicPrompt, durationSeconds, jobId);
+
+    // Guardar metadata para os cards do frontend.
+    // Tentar inferir genre/mood do music_prompt quando o Qwen não os devolve explicitamente.
+    const inferredGenre = params.genre || inferFromPrompt(musicPrompt, "genre") || "—";
+    const inferredMood = params.mood || inferFromPrompt(musicPrompt, "mood") || "—";
+    const inferredTempo = params.tempo || inferFromPrompt(musicPrompt, "tempo") || "—";
 
     await supabase.from("job_metadata").upsert({
         job_id: jobId,
@@ -236,6 +246,58 @@ async function runFullPipeline(jobId, conversationId, theme, style, durationSeco
         "O teu AMV está pronto! Podes ouvir a música e ver as cenas geradas.",
         "done", { output_path: outputPath }
     );
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Tenta inferir genre, mood ou tempo a partir do music_prompt quando o Qwen
+ * não os devolve como params explícitos.
+ */
+function inferFromPrompt(prompt = "", field) {
+    const p = prompt.toLowerCase();
+
+    if (field === "genre") {
+        const genres = [
+            ["reggaeton", "Reggaeton"], ["hip hop", "Hip Hop"], ["hip-hop", "Hip Hop"],
+            ["trap", "Trap"], ["edm", "EDM"], ["electronic", "Electronic"],
+            ["orchestral", "Orchestral"], ["classical", "Classical"],
+            ["jazz", "Jazz"], ["rock", "Rock"], ["metal", "Metal"],
+            ["pop", "Pop"], ["lofi", "Lo-Fi"], ["lo-fi", "Lo-Fi"],
+            ["ambient", "Ambient"], ["cinematic", "Cinematic"],
+            ["anime", "Anime OST"], ["epic", "Epic"],
+            ["r&b", "R&B"], ["soul", "Soul"], ["funk", "Funk"],
+            ["samba", "Samba"], ["bossa nova", "Bossa Nova"],
+        ];
+        for (const [keyword, label] of genres) {
+            if (p.includes(keyword)) return label;
+        }
+    }
+
+    if (field === "mood") {
+        const moods = [
+            ["melanchol", "Melancholic"], ["sad", "Melancholic"], ["dark", "Dark"],
+            ["epic", "Epic"], ["intense", "Intense"], ["energetic", "Energetic"],
+            ["happy", "Happy"], ["upbeat", "Upbeat"], ["calm", "Calm"],
+            ["peaceful", "Peaceful"], ["aggressive", "Aggressive"],
+            ["triumphant", "Triumphant"], ["romantic", "Romantic"],
+            ["emotional", "Emotional"], ["powerful", "Powerful"],
+            ["chill", "Chill"], ["relaxing", "Relaxing"],
+        ];
+        for (const [keyword, label] of moods) {
+            if (p.includes(keyword)) return label;
+        }
+    }
+
+    if (field === "tempo") {
+        const match = p.match(/(\d{2,3})\s*bpm/);
+        if (match) return `${match[1]} BPM`;
+        if (p.includes("fast") || p.includes("rapid") || p.includes("quick")) return "Fast";
+        if (p.includes("slow") || p.includes("soft")) return "Slow";
+        if (p.includes("medium") || p.includes("moderate")) return "Medium";
+    }
+
+    return null;
 }
 
 async function addMessage(conversationId, role, content, action = "chat", actionPayload = null) {

@@ -286,7 +286,9 @@ export default function Generate() {
             const data = await res.json();
             const msgs: Message[] = data.messages || [];
 
-            setMessages((prev) => (msgs.length > prev.length ? msgs : prev));
+            // Sempre substituir pelo DB se tiver pelo menos tantas mensagens quanto o estado local.
+            // Garante que mensagens de progresso da geração aparecem mesmo quando a contagem é igual.
+            setMessages((prev) => (msgs.length >= prev.length ? msgs : prev));
         } catch {
         }
     }
