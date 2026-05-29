@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useLocation } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { ArrowUp, Download, Loader2, Music, Image, Film, X } from "lucide-react";
 
 export function meta() {
@@ -40,6 +40,7 @@ const STATUS_LABEL: Partial<Record<JobStatus, string>> = {
 
 export default function Generate() {
     const location = useLocation();
+    const navigate = useNavigate();
 
     const [jobId, setJobId]         = useState<string | null>(location.state?.jobId ?? null);
     const [messages, setMessages]   = useState<Message[]>([]);
@@ -162,6 +163,8 @@ export default function Generate() {
             });
             if (!startRes.ok) throw new Error("Erro ao criar sessão.");
             const { job_id } = await startRes.json();
+            // Substituir o history entry para que, ao voltar atrás, o job seja carregado em vez de recriado
+            navigate("/app/generate", { state: { jobId: job_id }, replace: true });
             await sendMessage(job_id, prompt);
             setJobId(job_id);
         } catch (err: any) {
