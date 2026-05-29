@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router";
 import { ArrowRight, AudioLines, Play } from "lucide-react";
-import { authService } from "~/services/authService";
 
 export function meta() {
     return [{ title: "Armonyx" }];

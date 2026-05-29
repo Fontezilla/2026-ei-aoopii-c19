@@ -14,24 +14,25 @@ const headers = () => ({
  * Gera áudio a partir de um prompt.
  * Retorna o path local do ficheiro WAV guardado.
  */
-async function generateAudio(jobId, musicPrompt, durationSeconds = 30) {
-    // Arrancar geração
+/**
+ * workerJobId — ID único enviado ao worker (não tem de ser o UUID do job)
+ * parentJobId — UUID do job na DB; define a pasta em outputs/
+ */
+async function generateAudio(workerJobId, musicPrompt, durationSeconds = 30, parentJobId) {
     await axios.post(
         `${WORKER1_URL}/generate-audio`,
         {
-            job_id:           jobId,
+            job_id:           workerJobId,
             music_prompt:     musicPrompt,
             duration_seconds: Math.round(Number(durationSeconds)) || 30,
         },
         { headers: headers(), timeout: 30000 }
     );
 
-    // Polling até done
-    await pollUntilDone(jobId);
+    await pollUntilDone(workerJobId);
 
-    // Descarregar o WAV
     const r = await axios.get(
-        `${WORKER1_URL}/result/${jobId}/audio`,
+        `${WORKER1_URL}/result/${workerJobId}/audio`,
         {
             headers: headers(),
             responseType: "arraybuffer",
@@ -39,10 +40,11 @@ async function generateAudio(jobId, musicPrompt, durationSeconds = 30) {
         }
     );
 
-    const outputDir = path.join(__dirname, "../outputs");
+    const folder    = parentJobId || workerJobId;
+    const outputDir = path.join(__dirname, "../outputs", folder);
     if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
 
-    const filePath = path.join(outputDir, `${jobId}.wav`);
+    const filePath = path.join(outputDir, "audio.wav");
     fs.writeFileSync(filePath, Buffer.from(r.data));
 
     return filePath;
