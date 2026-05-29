@@ -1,11 +1,17 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { authService } from "~/services/authService";
+
+interface SignInFormState {
+    email: string;
+    password: string;
+    remember: boolean;
+}
 
 export function useSignInForm() {
     const navigate = useNavigate();
 
-    const [form, setForm] = useState({
+    const [form, setForm] = useState<SignInFormState>({
         email: "",
         password: "",
         remember: false,
@@ -18,42 +24,55 @@ export function useSignInForm() {
     useEffect(() => {
         const rememberedEmail = localStorage.getItem("rememberedEmail");
 
-        if (rememberedEmail) {
-            setForm((prev) => ({
-                ...prev,
-                email: rememberedEmail,
-                remember: true,
-            }));
+        if (!rememberedEmail) {
+            return;
         }
+
+        setForm((prev) => ({
+            ...prev,
+            email: rememberedEmail,
+            remember: true,
+        }));
     }, []);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value, type, checked } = e.target;
+
         setForm((prev) => ({
             ...prev,
             [name]: type === "checkbox" ? checked : value,
         }));
     };
 
-    const togglePassword = () => setShowPassword((prev) => !prev);
+    const togglePassword = () => {
+        setShowPassword((prev) => !prev);
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        if (loading) {
+            return;
+        }
+
         setError(null);
         setLoading(true);
 
         try {
-            await authService.login(form.email, form.password);
+            await authService.login(form.email.trim(), form.password);
 
             if (form.remember) {
-                localStorage.setItem("rememberedEmail", form.email);
+                localStorage.setItem("rememberedEmail", form.email.trim());
             } else {
                 localStorage.removeItem("rememberedEmail");
             }
 
-            navigate("/app");
-        } catch (err: any) {
-            setError(err.message ?? "Erro ao fazer login.");
+            navigate("/app", { replace: true });
+        } catch (err) {
+            const message =
+                err instanceof Error ? err.message : "Erro ao fazer login.";
+
+            setError(message);
         } finally {
             setLoading(false);
         }

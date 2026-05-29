@@ -2,10 +2,17 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { authService } from "~/services/authService";
 
+interface SignUpFormState {
+    name: string;
+    email: string;
+    password: string;
+    confirmPassword: string;
+}
+
 export function useSignUpForm() {
     const navigate = useNavigate();
 
-    const [form, setForm] = useState({
+    const [form, setForm] = useState<SignUpFormState>({
         name: "",
         email: "",
         password: "",
@@ -18,23 +25,47 @@ export function useSignUpForm() {
     const [loading, setLoading] = useState(false);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setForm({
-            ...form,
-            [e.target.name]: e.target.value,
-        });
+        const { name, value } = e.target;
+
+        setForm((prev) => ({
+            ...prev,
+            [name]: value,
+        }));
+    };
+
+    const validateForm = () => {
+        if (!form.name.trim()) {
+            return "O nome é obrigatório.";
+        }
+
+        if (!form.email.trim()) {
+            return "O email é obrigatório.";
+        }
+
+        if (form.password !== form.confirmPassword) {
+            return "As passwords não coincidem.";
+        }
+
+        if (form.password.length < 8) {
+            return "A password deve ter pelo menos 8 caracteres.";
+        }
+
+        return null;
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        setError(null);
 
-        if (form.password !== form.confirmPassword) {
-            setError("As passwords não coincidem.");
+        if (loading) {
             return;
         }
 
-        if (form.password.length < 8) {
-            setError("A password deve ter pelo menos 8 caracteres.");
+        setError(null);
+
+        const validationError = validateForm();
+
+        if (validationError) {
+            setError(validationError);
             return;
         }
 
@@ -42,15 +73,18 @@ export function useSignUpForm() {
 
         try {
             await authService.register(
-                form.name,
-                form.email,
+                form.name.trim(),
+                form.email.trim(),
                 form.password,
                 form.confirmPassword
             );
 
-            navigate("/app/generate");
-        } catch (err: any) {
-            setError(err.message ?? "Erro ao criar conta.");
+            navigate("/app/generate", { replace: true });
+        } catch (err) {
+            const message =
+                err instanceof Error ? err.message : "Erro ao criar conta.";
+
+            setError(message);
         } finally {
             setLoading(false);
         }
@@ -64,7 +98,7 @@ export function useSignUpForm() {
         loading,
         handleChange,
         handleSubmit,
-        togglePassword: () => setShowPassword(!showPassword),
-        toggleConfirmPassword: () => setShowConfirmPassword(!showConfirmPassword),
+        togglePassword: () => setShowPassword((prev) => !prev),
+        toggleConfirmPassword: () => setShowConfirmPassword((prev) => !prev),
     };
 }

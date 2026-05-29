@@ -8,7 +8,7 @@ const setAuthCookie = (res, token) => {
     res.cookie("token", token, {
         httpOnly: true,
         secure: IS_PROD,
-        sameSite: "strict",
+        sameSite: "lax",
         maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 };
@@ -138,7 +138,7 @@ const logout = async (req, res) => {
     res.clearCookie("token", {
         httpOnly: true,
         secure: IS_PROD,
-        sameSite: "strict",
+        sameSite: "lax",
     });
 
     return res.status(200).json({ message: "Logout efetuado com sucesso." });

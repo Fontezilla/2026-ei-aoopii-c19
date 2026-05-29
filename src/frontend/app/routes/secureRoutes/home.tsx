@@ -67,6 +67,7 @@ export default function Home() {
                         <div className="flex justify-center lg:justify-start">
                             <Link
                                 to="/app/history"
+                                prefetch="intent"
                                 className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-full border border-yellow-400/50 bg-black/70 px-8 text-sm font-bold uppercase tracking-wider text-yellow-400 backdrop-blur-xl hover:bg-yellow-400 hover:text-black active:scale-95 lg:w-40"
                             >
                                 View All
@@ -80,7 +81,6 @@ export default function Home() {
     );
 }
 
-// ── Últimos jobs do utilizador ────────────────────────────────────────────────
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
 function RecentTracks() {
@@ -88,33 +88,57 @@ function RecentTracks() {
     const [jobs, setJobs] = useState<any[]>([]);
     const [loaded, setLoaded] = useState(false);
 
-    // Carrega jobs ao montar
     useEffect(() => {
+        let active = true;
+
         fetch(`${API_URL}/job/history`, { credentials: "include" })
-            .then((r) => r.json())
+            .then((r) => {
+                if (!r.ok) {
+                    throw new Error("Erro ao carregar histórico.");
+                }
+
+                return r.json();
+            })
             .then((data) => {
+                if (!active) {
+                    return;
+                }
+
                 setJobs((data.jobs || []).slice(0, 3));
                 setLoaded(true);
             })
-            .catch(() => setLoaded(true));
+            .catch(() => {
+                if (!active) {
+                    return;
+                }
+
+                setLoaded(true);
+            });
+
+        return () => {
+            active = false;
+        };
     }, []);
 
-    // Placeholder enquanto carrega
     if (!loaded) {
         return (
             <div className="grid flex-1 grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {[1, 2, 3].map((i) => (
-                    <div key={i} className="h-52 animate-pulse rounded-2xl border border-yellow-400/20 bg-white/5" />
+                    <div
+                        key={i}
+                        className="h-52 animate-pulse rounded-2xl border border-yellow-400/20 bg-white/5"
+                    />
                 ))}
             </div>
         );
     }
 
-    // Sem jobs ainda
     if (jobs.length === 0) {
         return (
             <div className="flex flex-1 items-center justify-center rounded-2xl border border-yellow-400/20 bg-black/30 py-10">
-                <p className="text-sm text-zinc-500">No tracks yet. Create your first one!</p>
+                <p className="text-sm text-zinc-500">
+                    No tracks yet. Create your first one!
+                </p>
             </div>
         );
     }
@@ -127,15 +151,23 @@ function RecentTracks() {
                     className="rounded-2xl border border-yellow-400/30 bg-black/70 p-3 shadow-xl shadow-yellow-500/5 backdrop-blur-xl"
                 >
                     <div className="flex h-40 items-center justify-center overflow-hidden rounded-xl bg-zinc-900">
-                        <span className="text-xs text-zinc-500">{job.theme || "Untitled"}</span>
+                        <span className="text-xs text-zinc-500">
+                            {job.theme || "Untitled"}
+                        </span>
                     </div>
-                    <p className="mt-2 px-1 text-sm font-medium text-zinc-300 truncate">
+
+                    <p className="mt-2 truncate px-1 text-sm font-medium text-zinc-300">
                         {job.theme || "Untitled"}
                     </p>
+
                     <div className="mt-2 flex justify-center">
                         <button
                             type="button"
-                            onClick={() => navigate(`/app/generate`, { state: { jobId: job.id } })}
+                            onClick={() =>
+                                navigate("/app/generate", {
+                                    state: { jobId: job.id },
+                                })
+                            }
                             className="flex h-8 w-full items-center justify-center gap-1.5 rounded-full bg-yellow-400 text-sm font-bold text-black hover:bg-yellow-300 active:scale-95"
                         >
                             <Play size={14} />

@@ -14,6 +14,8 @@ export interface AuthResponse {
 
 const AUTH_USER_KEY = "authUser";
 
+let meRequest: Promise<AuthUser | null> | null = null;
+
 const getStorage = () => {
     if (typeof window === "undefined") {
         return null;
@@ -22,7 +24,43 @@ const getStorage = () => {
     return window.localStorage;
 };
 
+const getErrorMessage = async (res: Response, fallback: string) => {
+    try {
+        const data = await res.json();
+        return data.error ?? data.message ?? fallback;
+    } catch {
+        return fallback;
+    }
+};
+
+const saveUser = (user: AuthUser) => {
+    getStorage()?.setItem(AUTH_USER_KEY, JSON.stringify(user));
+};
+
+const clearUser = () => {
+    getStorage()?.removeItem(AUTH_USER_KEY);
+};
+
 export const authService = {
+    getStoredUser(): AuthUser | null {
+        const rawUser = getStorage()?.getItem(AUTH_USER_KEY);
+
+        if (!rawUser) {
+            return null;
+        }
+
+        try {
+            return JSON.parse(rawUser) as AuthUser;
+        } catch {
+            clearUser();
+            return null;
+        }
+    },
+
+    hasStoredUser(): boolean {
+        return this.getStoredUser() !== null;
+    },
+
     async login(email: string, password: string) {
         const res = await fetch(`${API_URL}/auth/login`, {
             method: "POST",
@@ -31,10 +69,15 @@ export const authService = {
             body: JSON.stringify({ email, password }),
         });
 
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? data.message ?? "Erro ao fazer login.");
-        getStorage()?.setItem(AUTH_USER_KEY, JSON.stringify(data.user));
-        return data as AuthResponse;
+        if (!res.ok) {
+            throw new Error(await getErrorMessage(res, "Erro ao fazer login."));
+        }
+
+        const data = (await res.json()) as AuthResponse;
+        saveUser(data.user);
+        meRequest = Promise.resolve(data.user);
+
+        return data;
     },
 
     async register(
@@ -47,39 +90,64 @@ export const authService = {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             credentials: "include",
-            body: JSON.stringify({ full_name, email, password, confirm_password }),
-        });
-
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? data.message ?? "Erro ao criar conta.");
-        getStorage()?.setItem(AUTH_USER_KEY, JSON.stringify(data.user));
-        return data as AuthResponse;
-    },
-
-    async logout() {
-        await fetch(`${API_URL}/auth/logout`, {
-            method: "POST",
-            credentials: "include",
-        });
-        getStorage()?.removeItem(AUTH_USER_KEY);
-    },
-
-    hasStoredUser() {
-        return !!getStorage()?.getItem(AUTH_USER_KEY);
-    },
-
-    async me() {
-        const res = await fetch(`${API_URL}/auth/me`, {
-            credentials: "include",
+            body: JSON.stringify({
+                full_name,
+                email,
+                password,
+                confirm_password,
+            }),
         });
 
         if (!res.ok) {
-            getStorage()?.removeItem(AUTH_USER_KEY);
-            return null;
+            throw new Error(await getErrorMessage(res, "Erro ao criar conta."));
         }
 
-        const data = await res.json();
-        getStorage()?.setItem(AUTH_USER_KEY, JSON.stringify(data.user));
-        return data.user as AuthUser;
+        const data = (await res.json()) as AuthResponse;
+        saveUser(data.user);
+        meRequest = Promise.resolve(data.user);
+
+        return data;
+    },
+
+    async logout() {
+        try {
+            await fetch(`${API_URL}/auth/logout`, {
+                method: "POST",
+                credentials: "include",
+            });
+        } finally {
+            clearUser();
+            meRequest = null;
+        }
+    },
+
+    async me(): Promise<AuthUser | null> {
+        if (meRequest) {
+            return meRequest;
+        }
+
+        meRequest = fetch(`${API_URL}/auth/me`, {
+            credentials: "include",
+        })
+            .then(async (res) => {
+                if (!res.ok) {
+                    clearUser();
+                    return null;
+                }
+
+                const data = await res.json();
+                saveUser(data.user);
+
+                return data.user as AuthUser;
+            })
+            .catch(() => {
+                clearUser();
+                return null;
+            })
+            .finally(() => {
+                meRequest = null;
+            });
+
+        return meRequest;
     },
 };
