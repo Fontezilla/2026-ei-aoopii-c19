@@ -79,7 +79,11 @@ async function handleMessage(jobId, conversationId, userMessage) {
     } catch (err) {
         console.error("[Orchestrator] Erro no classify-intent:", err.message);
         const reply = "Ocorreu um erro ao processar a tua mensagem. Tenta novamente.";
-        await addMessage(conversationId, "assistant", reply, "chat");
+        await addMessage(conversationId, "assistant", reply, "error");
+        // Garantir que o job não fica preso em PENDING quando o classify falha
+        if (job?.status === "PENDING") {
+            await updateJobStatus(jobId, JOB_STATUS.FAILED, null, err.message);
+        }
         return { intent: "error", reply };
     }
 
