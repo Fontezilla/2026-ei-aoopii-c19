@@ -136,14 +136,14 @@ async function runAudioOnly(jobId, conversationId, musicPrompt, durationSeconds,
     const outputPath = await generateAudio(audioJobId, musicPrompt, durationSeconds, jobId);
 
     // Guardar metadata básica para os cards do frontend
-    const genre = params.genre || params.style || style || musicPrompt.split(/[\s,]+/)[0] || "—";
+    // genre e mood vêm dos params do Qwen; só usar style como último recurso e apenas para genre
     await supabase.from("job_metadata").upsert({
         job_id:       jobId,
         music_prompt: musicPrompt,
         settings: {
-            genre:    genre,
+            genre:    params.genre || "—",
             duration: `${durationSeconds}s`,
-            mood:     params.mood  || style || "—",
+            mood:     params.mood  || "—",
             tempo:    params.tempo || "—",
         },
     });
