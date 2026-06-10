@@ -22,7 +22,7 @@ async function generateImages(workerJobId, imagePrompts, parentJobId) {
             job_id: workerJobId,
             scenes: imagePrompts.map((prompt, i) => ({
                 scene_index: i + 1,
-                prompt,
+                image_prompt: prompt,
             })),
         },
         { headers: headers(), timeout: 30000 }

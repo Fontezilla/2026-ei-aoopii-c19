@@ -34,6 +34,7 @@ function buildContext(job = {}, metadata = {}, conversationHistory = []) {
         generation_phase: generatingStatuses.includes(job.status) ? (job.current_step || "generating") : "idle",
         music_prompt: metadata.music_prompt || null,
         settings: metadata.settings || null,
+        max_audio_duration_seconds: 30,
         conversation_history: history,
         conversation_summary: job.theme
             ? `O utilizador está a criar um AMV com o tema: "${job.theme}"`
@@ -58,7 +59,7 @@ async function classifyAndReply(userMessage, job = {}, metadata = {}, conversati
     return result;
 }
 
-async function generatePlan(theme, style = "anime cinematic emotional", numScenes = 12, musicDuration = 60) {
+async function generatePlan(theme, style = "anime cinematic emotional", numScenes = 12, musicDuration = 30) {
     const jobId = `plan_${Date.now()}`;
 
     const r = await axios.post(

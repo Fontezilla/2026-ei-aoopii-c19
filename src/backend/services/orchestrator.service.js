@@ -21,6 +21,23 @@ const JOB_STEP = {
     RENDER: "RENDER",
 };
 
+// Limite de duração do áudio. Acima de ~40s (≈2000 tokens autoregressivos a
+// 50Hz), o MusicGen entra em território de extrapolação (treinado em clips de
+// ~30s) e o cuBLAS falha com "device-side assert triggered" de forma
+// reprodutível — confirmado por bisseção controlada (40s ok, 50s crasha sempre
+// ao mesmo ponto). Aplicamos este teto tanto ao valor do utilizador como ao
+// fallback, para nunca cair na zona instável.
+const MAX_AUDIO_DURATION = 30;
+
+// Estados em que já existe uma geração a decorrer — usados pela guarda de
+// concorrência para impedir disparar uma segunda geração no mesmo job.
+const GENERATING_STATUSES = [
+    JOB_STATUS.GENERATING_PLAN,
+    JOB_STATUS.GENERATING_AUDIO,
+    JOB_STATUS.GENERATING_IMAGES,
+    JOB_STATUS.RENDERING,
+];
+
 async function createJob(userId, initialTheme = "") {
     const jobId = uuidv4();
 
@@ -45,24 +62,30 @@ async function createJob(userId, initialTheme = "") {
 async function handleMessage(jobId, conversationId, userMessage) {
     await addMessage(conversationId, "user", userMessage);
 
-    const { data: job } = await supabase
+    const { data: job, error: jobErr } = await supabase
         .from("jobs")
         .select("id, status, current_step, theme, output_path")
         .eq("id", jobId)
         .single();
+    if (jobErr && jobErr.code !== "PGRST116")
+        console.warn("[Orchestrator] Erro ao buscar job:", jobErr.message);
 
-    const { data: metadata } = await supabase
+    const { data: metadata, error: metaErr } = await supabase
         .from("job_metadata")
         .select("creative_plan, storyboard, music_prompt, settings")
         .eq("job_id", jobId)
         .single();
+    if (metaErr && metaErr.code !== "PGRST116")
+        console.warn("[Orchestrator] Erro ao buscar metadata:", metaErr.message);
 
+    // Janela de histórico enviada ao classify-intent. As mensagens de progresso
+    // são filtradas adiante (buildContext), por isso o número efetivo é menor.
     const { data: recentMessages } = await supabase
         .from("messages")
         .select("role, content, action")
         .eq("conversation_id", conversationId)
         .order("created_at", { ascending: false })
-        .limit(10);
+        .limit(25);
     const conversationHistory = (recentMessages || []).reverse();
 
     let classification;
@@ -80,13 +103,34 @@ async function handleMessage(jobId, conversationId, userMessage) {
     }
 
     const { intent, params, response_text } = classification;
+
+    const shouldGenerate = ["plan", "audio", "images", "video", "regenerate_audio", "regenerate_images"].includes(intent);
+
+    // Guarda de concorrência: tentar "reservar" o job de forma atómica antes de
+    // disparar uma geração. O update só afeta linhas que NÃO estejam já num
+    // estado de geração, por isso dois pedidos simultâneos não arrancam duas
+    // gerações no mesmo job (evita OOM no worker e corrupção do mesmo audio.wav).
+    if (shouldGenerate) {
+        const { data: reserved } = await supabase
+            .from("jobs")
+            .update({ status: JOB_STATUS.GENERATING_PLAN })
+            .eq("id", jobId)
+            .not("status", "in", `(${GENERATING_STATUSES.join(",")})`)
+            .select("id");
+
+        if (!reserved || reserved.length === 0) {
+            const busyReply = "Ainda estou a tratar do pedido anterior — espera que termine antes de pedir outra geração. 🎶";
+            await addMessage(conversationId, "assistant", busyReply, "chat");
+            return { intent: "busy", reply: busyReply, params };
+        }
+    }
+
     await addMessage(conversationId, "assistant", response_text, intent, params);
 
-    const shouldGenerate = ["plan", "audio", "video", "regenerate_audio", "regenerate_images"].includes(intent);
     if (shouldGenerate) {
         const theme = (params?.theme || job?.theme || userMessage || "anime").trim();
         const style = params?.style || "anime cinematic emotional";
-        const duration = Math.max(5, parseInt(params?.duration, 10) || 60);
+        const duration = Math.min(MAX_AUDIO_DURATION, Math.max(5, parseInt(params?.duration, 10) || MAX_AUDIO_DURATION));
 
         setImmediate(() => {
             runGeneration(jobId, conversationId, intent, theme, style, duration, params).catch((err) => {
@@ -105,6 +149,8 @@ async function runGeneration(jobId, conversationId, intent, theme, style, durati
             await runAudioOnly(jobId, conversationId, theme, durationSeconds, style, params);
         } else if (intent === "plan") {
             await runPlanOnly(jobId, conversationId, theme, style, durationSeconds);
+        } else if (intent === "images" || intent === "regenerate_images") {
+            await runImagesOnly(jobId, conversationId);
         } else {
             await runFullPipeline(jobId, conversationId, theme, style, durationSeconds);
         }
@@ -122,22 +168,27 @@ async function runAudioOnly(jobId, conversationId, musicPrompt, durationSeconds,
     await addMessage(conversationId, "assistant", "A gerar a música...", "generating_audio");
 
     const audioJobId = `audio_${jobId.replace(/-/g, "_")}`;
-    const outputPath = await generateAudio(audioJobId, musicPrompt, durationSeconds, jobId);
+    // O MusicGen é treinado com descrições em inglês. O Qwen já devolve um
+    // music_prompt em inglês em params.music_prompt (PT-PT fica no response_text
+    // para o utilizador); usar esse e só cair no theme se faltar.
+    const effectivePrompt = (params.music_prompt || musicPrompt || "anime").trim();
+    console.log(`[Orchestrator] A gerar áudio job=${jobId} duration=${durationSeconds}s prompt="${effectivePrompt}"`);
+    const outputPath = await generateAudio(audioJobId, effectivePrompt, durationSeconds, jobId);
 
     // Guardar metadata para os cards do frontend.
     // Tentar inferir genre/mood do music_prompt quando o Qwen não os devolve explicitamente.
-    const inferredGenre = params.genre || inferFromPrompt(musicPrompt, "genre") || "—";
-    const inferredMood = params.mood || inferFromPrompt(musicPrompt, "mood") || "—";
-    const inferredTempo = params.tempo || inferFromPrompt(musicPrompt, "tempo") || "—";
+    const inferredGenre = params.genre || inferFromPrompt(effectivePrompt, "genre") || "—";
+    const inferredMood = params.mood || inferFromPrompt(effectivePrompt, "mood") || "—";
+    const inferredTempo = params.tempo || inferFromPrompt(effectivePrompt, "tempo") || "—";
 
     await supabase.from("job_metadata").upsert({
         job_id: jobId,
-        music_prompt: musicPrompt,
+        music_prompt: effectivePrompt,
         settings: {
-            genre: params.genre || "—",
+            genre:    inferredGenre,
             duration: `${durationSeconds}s`,
-            mood: params.mood || "—",
-            tempo: params.tempo || "—",
+            mood:     inferredMood,
+            tempo:    inferredTempo,
         },
     });
 
@@ -169,6 +220,7 @@ async function runPlanOnly(jobId, conversationId, theme, style, durationSeconds)
         creative_plan: plan,
         music_prompt: plan.music_prompt || theme,
         settings: plan.settings || {},
+        storyboard: null,
     });
 
     await supabase.from("jobs").update({
@@ -182,6 +234,46 @@ async function runPlanOnly(jobId, conversationId, theme, style, durationSeconds)
     await addMessage(
         conversationId, "assistant",
         "Plano criativo pronto! Diz-me quando quiseres gerar a música ou as imagens.",
+        "done"
+    );
+}
+
+async function runImagesOnly(jobId, conversationId) {
+    const { data: metadata } = await supabase
+        .from("job_metadata")
+        .select("creative_plan")
+        .eq("job_id", jobId)
+        .single();
+
+    const imagePrompts = (metadata?.creative_plan?.storyboard || [])
+        .map((s) => s.image_prompt)
+        .filter(Boolean);
+
+    if (imagePrompts.length === 0) {
+        throw new Error("Sem plano criativo — gera primeiro o plano antes de pedir as imagens.");
+    }
+
+    await updateJobStatus(jobId, JOB_STATUS.GENERATING_IMAGES, JOB_STEP.IMAGES);
+    await logJob(jobId, JOB_STATUS.GENERATING_IMAGES, "A gerar imagens...");
+    await addMessage(conversationId, "assistant", "A gerar as imagens das cenas...", "generating_images");
+
+    const imageJobId = `img_${jobId.replace(/-/g, "_")}`;
+    const sceneImages = await generateImages(imageJobId, imagePrompts, jobId);
+
+    if (sceneImages.length > 0) {
+        await supabase.from("job_metadata").update({ storyboard: sceneImages }).eq("job_id", jobId);
+    }
+
+    await supabase.from("jobs").update({
+        status: JOB_STATUS.COMPLETED,
+        current_step: JOB_STEP.IMAGES,
+        completed_at: new Date().toISOString(),
+    }).eq("id", jobId);
+
+    await logJob(jobId, JOB_STATUS.COMPLETED, "Imagens geradas.");
+    await addMessage(
+        conversationId, "assistant",
+        "As imagens das cenas estão prontas! Podes ver o storyboard na aba Images.",
         "done"
     );
 }
@@ -210,12 +302,11 @@ async function runFullPipeline(jobId, conversationId, theme, style, durationSeco
     await addMessage(conversationId, "assistant", "A gerar a música...", "generating_audio");
 
     const audioJobId = `audio_${jobId.replace(/-/g, "_")}`;
-    let outputPath = null;
-    try {
-        outputPath = await generateAudio(audioJobId, musicPrompt, durationSeconds, jobId);
-    } catch (err) {
-        console.error("[Orchestrator] Erro no áudio:", err.message);
-    }
+    // O áudio é obrigatório para o AMV: se falhar, propagar o erro para que o
+    // job fique FAILED (em vez de terminar COMPLETED com output_path null).
+    // As imagens (abaixo) continuam opcionais e o seu erro é tolerado.
+    console.log(`[Orchestrator] A gerar áudio job=${jobId} duration=${durationSeconds}s prompt="${musicPrompt}"`);
+    const outputPath = await generateAudio(audioJobId, musicPrompt, durationSeconds, jobId);
 
     if (imagePrompts.length > 0) {
         await updateJobStatus(jobId, JOB_STATUS.GENERATING_IMAGES, JOB_STEP.IMAGES);
@@ -301,13 +392,14 @@ function inferFromPrompt(prompt = "", field) {
 }
 
 async function addMessage(conversationId, role, content, action = "chat", actionPayload = null) {
-    await supabase.from("messages").insert({
+    const { error } = await supabase.from("messages").insert({
         conversation_id: conversationId,
         role,
         content,
         action,
         action_payload: actionPayload,
     });
+    if (error) console.error("[Orchestrator] Erro ao guardar mensagem:", error.message);
 }
 
 async function updateJobStatus(jobId, status, currentStep = null, errorMessage = null) {

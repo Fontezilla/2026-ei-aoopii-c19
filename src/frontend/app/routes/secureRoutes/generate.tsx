@@ -6,6 +6,7 @@ import {
     Film,
     Image,
     Music,
+    ScrollText,
     Wand2,
     X,
     type LucideIcon,
@@ -28,7 +29,7 @@ type JobStatus =
     | "COMPLETED"
     | "FAILED";
 
-type PreviewTab = "audio" | "images" | "video";
+type PreviewTab = "audio" | "images" | "video" | "plan";
 
 type Message = {
     role: "user" | "assistant";
@@ -38,7 +39,7 @@ type Message = {
 };
 
 const PROGRESS_ACTIONS = new Set(["planning", "generating_audio", "generating_images", "rendering"]);
-const GENERATING_INTENTS = new Set(["plan", "audio", "video", "regenerate_audio", "regenerate_images"]);
+const GENERATING_INTENTS = new Set(["plan", "audio", "images", "video", "regenerate_audio", "regenerate_images"]);
 
 const STATUS_LABEL: Partial<Record<JobStatus, string>> = {
     PENDING: "Starting...",
@@ -184,6 +185,8 @@ export default function Generate() {
         })()
         : null;
 
+    const hasPlan = !!jobMeta?.creative_plan;
+
     const previewTabs: {
         id: PreviewTab;
         label: string;
@@ -192,6 +195,7 @@ export default function Generate() {
             { id: "audio", label: "Audio", Icon: Music },
             { id: "images", label: "Images", Icon: Image },
             { id: "video", label: "Video", Icon: Film },
+            { id: "plan", label: "Plan", Icon: ScrollText },
         ];
 
     useEffect(() => {
@@ -266,6 +270,11 @@ export default function Generate() {
 
         if (jobStatus === "RENDERING") {
             setActiveTab("video");
+            return;
+        }
+
+        if (jobStatus === "COMPLETED" && jobMeta?.creative_plan && !jobMeta?.output_path) {
+            setActiveTab("plan");
         }
     }, [jobStatus, jobMeta]);
 
@@ -274,7 +283,7 @@ export default function Generate() {
     }, [audioSrc]);
 
     function isGenerating(status: JobStatus) {
-        return ["PENDING", "GENERATING_PLAN", "GENERATING_AUDIO", "GENERATING_IMAGES", "RENDERING"].includes(status);
+        return ["GENERATING_PLAN", "GENERATING_AUDIO", "GENERATING_IMAGES", "RENDERING"].includes(status);
     }
 
     async function loadMessages(jid: string) {
@@ -482,14 +491,7 @@ export default function Generate() {
                                 const isDoneMsg = msg.role === "assistant" && msg.action === "done";
                                 const isErrorMsg = msg.role === "assistant" && msg.action === "error";
 
-                                if (isProgress) {
-                                    return (
-                                        <div key={i} className="flex items-center gap-2 py-0.5 pl-1">
-                                            <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-yellow-400/70" />
-                                            <span className="text-xs italic text-yellow-400/80">{msg.content}</span>
-                                        </div>
-                                    );
-                                }
+                                if (isProgress) return null;
 
                                 return (
                                     <div
@@ -853,6 +855,63 @@ export default function Generate() {
                                             </span>
                                         </div>
                                     )}
+                                </div>
+                            )}
+
+                            {activeTab === "plan" && (
+                                <div className="flex flex-1 flex-col gap-4">
+                                    {!hasPlan && (
+                                        <div className="flex flex-1 items-center justify-center">
+                                            <div className="w-full max-w-xl rounded-[26px] border border-dashed border-yellow-400/20 bg-black/25 px-8 py-10 text-center backdrop-blur-sm">
+                                                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-yellow-400/15 bg-yellow-400/8">
+                                                    <ScrollText size={28} className="text-yellow-400/70" />
+                                                </div>
+                                                <h4 className="text-xl font-semibold text-white">No plan yet</h4>
+                                                <p className="mt-2 text-sm leading-relaxed text-zinc-400">
+                                                    Ask to create a plan or generate the full AMV to see the creative brief here.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {hasPlan && (() => {
+                                        const plan = jobMeta.creative_plan;
+                                        const scenes: any[] = plan.storyboard ?? [];
+                                        return (
+                                            <>
+                                                <div className="rounded-2xl border border-yellow-400/20 bg-white/3 p-5">
+                                                    <p className="text-[10px] font-semibold uppercase tracking-widest text-yellow-400/60">AMV Title</p>
+                                                    <h3 className="mt-1 text-lg font-semibold text-white">{plan.title ?? "—"}</h3>
+                                                    {plan.music_prompt && (
+                                                        <p className="mt-3 text-xs leading-relaxed text-zinc-400">
+                                                            <span className="font-semibold text-zinc-300">Music prompt: </span>
+                                                            {plan.music_prompt}
+                                                        </p>
+                                                    )}
+                                                </div>
+
+                                                <div className="flex flex-1 flex-col gap-2 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                                                    {scenes.map((scene: any, i: number) => (
+                                                        <div
+                                                            key={i}
+                                                            className="flex gap-3 rounded-xl border border-yellow-400/10 bg-white/2 px-4 py-3"
+                                                        >
+                                                            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-yellow-400/15 text-[10px] font-bold text-yellow-400">
+                                                                {scene.scene_index ?? i + 1}
+                                                            </span>
+                                                            <div className="min-w-0 flex-1">
+                                                                <p className="text-sm text-zinc-200 leading-relaxed">{scene.description ?? "—"}</p>
+                                                                <div className="mt-1.5 flex gap-3">
+                                                                    <span className="text-[11px] text-zinc-500">{scene.duration ?? "—"}s</span>
+                                                                    <span className="text-[11px] text-zinc-500">{scene.transition ?? "—"}</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </>
+                                        );
+                                    })()}
                                 </div>
                             )}
 
