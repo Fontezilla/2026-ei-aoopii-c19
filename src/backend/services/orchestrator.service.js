@@ -190,7 +190,7 @@ async function runAudioOnly(jobId, conversationId, musicPrompt, durationSeconds,
             mood:     inferredMood,
             tempo:    inferredTempo,
         },
-    });
+    }, { onConflict: 'job_id' });
 
     await logJob(jobId, JOB_STATUS.COMPLETED, "Áudio gerado.");
     await addMessage(
@@ -221,7 +221,7 @@ async function runPlanOnly(jobId, conversationId, theme, style, durationSeconds)
         music_prompt: plan.music_prompt || theme,
         settings: plan.settings || {},
         storyboard: null,
-    });
+    }, { onConflict: 'job_id' });
 
     await supabase.from("jobs").update({
         theme,
@@ -294,7 +294,7 @@ async function runFullPipeline(jobId, conversationId, theme, style, durationSeco
         creative_plan: plan,
         music_prompt: musicPrompt,
         settings: plan.settings || {},
-    });
+    }, { onConflict: 'job_id' });
     await supabase.from("jobs").update({ theme }).eq("id", jobId);
 
     await updateJobStatus(jobId, JOB_STATUS.GENERATING_AUDIO, JOB_STEP.AUDIO);

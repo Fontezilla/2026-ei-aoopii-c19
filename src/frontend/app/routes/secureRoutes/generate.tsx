@@ -258,23 +258,24 @@ export default function Generate() {
     }, [jobStatus, jobId]);
 
     useEffect(() => {
-        if (jobStatus === "GENERATING_AUDIO" || (jobStatus === "COMPLETED" && jobMeta?.output_path)) {
+        if (jobStatus === "GENERATING_AUDIO") {
             setActiveTab("audio");
             return;
         }
-
-        if (jobStatus === "GENERATING_IMAGES" || (jobStatus === "COMPLETED" && jobMeta?.storyboard?.length)) {
+        if (jobStatus === "GENERATING_IMAGES") {
             setActiveTab("images");
             return;
         }
-
         if (jobStatus === "RENDERING") {
             setActiveTab("video");
             return;
         }
-
-        if (jobStatus === "COMPLETED" && jobMeta?.creative_plan && !jobMeta?.output_path) {
-            setActiveTab("plan");
+        if (jobStatus === "COMPLETED") {
+            const step = jobMeta?.current_step;
+            if (step === "PLAN") { setActiveTab("plan"); return; }
+            if (step === "IMAGES" && jobMeta?.storyboard?.length) { setActiveTab("images"); return; }
+            if (jobMeta?.output_path) { setActiveTab("audio"); return; }
+            if (jobMeta?.creative_plan) { setActiveTab("plan"); }
         }
     }, [jobStatus, jobMeta]);
 
@@ -283,7 +284,7 @@ export default function Generate() {
     }, [audioSrc]);
 
     function isGenerating(status: JobStatus) {
-        return ["GENERATING_PLAN", "GENERATING_AUDIO", "GENERATING_IMAGES", "RENDERING"].includes(status);
+        return ["PENDING", "GENERATING_PLAN", "GENERATING_AUDIO", "GENERATING_IMAGES", "RENDERING"].includes(status);
     }
 
     async function loadMessages(jid: string) {
@@ -311,9 +312,10 @@ export default function Generate() {
             const data = await res.json();
 
             setJobStatus(data.status);
-            if (data.output_path || data.metadata) {
+            if (data.output_path || data.metadata || data.current_step) {
                 setJobMeta({
                     output_path: data.output_path ?? null,
+                    current_step: data.current_step ?? null,
                     ...(data.metadata ?? {}),
                 });
             }
@@ -722,7 +724,7 @@ export default function Generate() {
                                                     </div>
                                                 )}
 
-                                                {hasAudio && audioSrc && (
+                                                {!gen && hasAudio && audioSrc && (
                                                     <div className="w-full max-w-3xl rounded-[26px] border border-yellow-400/20 bg-black/35 p-6 backdrop-blur-md">
                                                         <div className="flex items-center justify-between gap-4">
                                                             <div className="flex items-center gap-4">
