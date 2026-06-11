@@ -78,7 +78,7 @@ router.get("/:id/status", async (req, res) => {
 
         const { data: meta } = await supabase
             .from("job_metadata")
-            .select("music_prompt, settings, storyboard, creative_plan")
+            .select("music_prompt, settings, storyboard, creative_plan, video_path")
             .eq("job_id", job.id)
             .single();
         const metadata = meta || null;

@@ -29,7 +29,7 @@ function buildContext(job = {}, metadata = {}, conversationHistory = []) {
         has_plan: !!metadata.creative_plan,
         has_audio: !!job.output_path,
         has_images: !!(metadata.storyboard && metadata.storyboard.length > 0),
-        has_video: false,
+        has_video: !!metadata.video_path,
         current_status: job.status || "idle",
         generation_phase: generatingStatuses.includes(job.status) ? (job.current_step || "generating") : "idle",
         music_prompt: metadata.music_prompt || null,

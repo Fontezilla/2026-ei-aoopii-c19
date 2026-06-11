@@ -2,6 +2,7 @@ const supabase = require("../configs/supabase");
 const { classifyAndReply, generatePlan } = require("./qwen.service");
 const { generateAudio } = require("./musicgen.service");
 const { generateImages } = require("./diffusion.service");
+const { renderVideo } = require("./video.service");
 const { v4: uuidv4 } = require("uuid");
 
 const JOB_STATUS = {
@@ -104,7 +105,7 @@ async function handleMessage(jobId, conversationId, userMessage) {
 
     const { intent, params, response_text } = classification;
 
-    const shouldGenerate = ["plan", "audio", "images", "video", "regenerate_audio", "regenerate_images"].includes(intent);
+    const shouldGenerate = ["plan", "audio", "images", "video", "regenerate_audio", "regenerate_images", "regenerate_video"].includes(intent);
 
     // Guarda de concorrência: tentar "reservar" o job de forma atómica antes de
     // disparar uma geração. O update só afeta linhas que NÃO estejam já num
@@ -151,6 +152,8 @@ async function runGeneration(jobId, conversationId, intent, theme, style, durati
             await runPlanOnly(jobId, conversationId, theme, style, durationSeconds);
         } else if (intent === "images" || intent === "regenerate_images") {
             await runImagesOnly(jobId, conversationId);
+        } else if (intent === "video" || intent === "regenerate_video") {
+            await runVideoOnly(jobId, conversationId);
         } else {
             await runFullPipeline(jobId, conversationId, theme, style, durationSeconds);
         }
@@ -238,6 +241,62 @@ async function runPlanOnly(jobId, conversationId, theme, style, durationSeconds)
     );
 }
 
+async function runVideoOnly(jobId, conversationId) {
+    const { data: metadata } = await supabase
+        .from("job_metadata")
+        .select("creative_plan, storyboard")
+        .eq("job_id", jobId)
+        .single();
+
+    const { data: job } = await supabase
+        .from("jobs")
+        .select("output_path")
+        .eq("id", jobId)
+        .single();
+
+    if (!metadata?.storyboard?.length) {
+        const msg = "Ainda não tens imagens geradas. Gera primeiro as imagens antes de criar o vídeo.";
+        await addMessage(conversationId, "assistant", msg, "chat");
+        await updateJobStatus(jobId, JOB_STATUS.COMPLETED);
+        return;
+    }
+    if (!job?.output_path) {
+        const msg = "Ainda não tens música gerada. Gera primeiro a música antes de criar o vídeo.";
+        await addMessage(conversationId, "assistant", msg, "chat");
+        await updateJobStatus(jobId, JOB_STATUS.COMPLETED);
+        return;
+    }
+
+    await updateJobStatus(jobId, JOB_STATUS.RENDERING, JOB_STEP.RENDER);
+    await logJob(jobId, JOB_STATUS.RENDERING, "A renderizar o vídeo...");
+    await addMessage(conversationId, "assistant", "A montar o vídeo com a música e as imagens...", "rendering");
+
+    const videoRelPath = await renderVideo(
+        metadata.storyboard,
+        job.output_path,
+        metadata.creative_plan,
+        jobId
+    );
+
+    await supabase.from("job_metadata")
+        .update({ video_path: videoRelPath })
+        .eq("job_id", jobId);
+
+    await supabase.from("jobs").update({
+        status: JOB_STATUS.COMPLETED,
+        current_step: JOB_STEP.RENDER,
+        completed_at: new Date().toISOString(),
+    }).eq("id", jobId);
+
+    await logJob(jobId, JOB_STATUS.COMPLETED, "Vídeo renderizado.");
+    await addMessage(
+        conversationId,
+        "assistant",
+        "🎬 O teu AMV está pronto! Podes ver o vídeo na aba Video.",
+        "done"
+    );
+}
+
 async function runImagesOnly(jobId, conversationId) {
     const { data: metadata } = await supabase
         .from("job_metadata")
@@ -308,6 +367,7 @@ async function runFullPipeline(jobId, conversationId, theme, style, durationSeco
     console.log(`[Orchestrator] A gerar áudio job=${jobId} duration=${durationSeconds}s prompt="${musicPrompt}"`);
     const outputPath = await generateAudio(audioJobId, musicPrompt, durationSeconds, jobId);
 
+    let sceneImages = [];
     if (imagePrompts.length > 0) {
         await updateJobStatus(jobId, JOB_STATUS.GENERATING_IMAGES, JOB_STEP.IMAGES);
         await logJob(jobId, JOB_STATUS.GENERATING_IMAGES, "A gerar imagens...");
@@ -315,12 +375,29 @@ async function runFullPipeline(jobId, conversationId, theme, style, durationSeco
 
         const imageJobId = `img_${jobId.replace(/-/g, "_")}`;
         try {
-            const sceneImages = await generateImages(imageJobId, imagePrompts, jobId);
+            sceneImages = await generateImages(imageJobId, imagePrompts, jobId);
             if (sceneImages.length > 0) {
                 await supabase.from("job_metadata").update({ storyboard: sceneImages }).eq("job_id", jobId);
             }
         } catch (err) {
             console.error("[Orchestrator] Erro nas imagens:", err.message);
+        }
+    }
+
+    // Render video if we have both images and audio
+    let videoRelPath = null;
+    if (sceneImages.length > 0) {
+        await updateJobStatus(jobId, JOB_STATUS.RENDERING, JOB_STEP.RENDER);
+        await logJob(jobId, JOB_STATUS.RENDERING, "A renderizar o vídeo...");
+        await addMessage(conversationId, "assistant", "A montar o vídeo com a música e as imagens...", "rendering");
+
+        try {
+            videoRelPath = await renderVideo(sceneImages, outputPath, plan, jobId);
+            await supabase.from("job_metadata")
+                .update({ video_path: videoRelPath })
+                .eq("job_id", jobId);
+        } catch (err) {
+            console.error("[Orchestrator] Erro na renderização do vídeo:", err.message);
         }
     }
 
@@ -334,7 +411,9 @@ async function runFullPipeline(jobId, conversationId, theme, style, durationSeco
     await logJob(jobId, JOB_STATUS.COMPLETED, "Geração concluída.");
     await addMessage(
         conversationId, "assistant",
-        "O teu AMV está pronto! Podes ouvir a música e ver as cenas geradas.",
+        videoRelPath
+            ? "🎬 O teu AMV está pronto! Podes ouvir a música, ver as cenas e o vídeo final."
+            : "O teu AMV está pronto! Podes ouvir a música e ver as cenas geradas.",
         "done", { output_path: outputPath }
     );
 }

@@ -39,7 +39,7 @@ type Message = {
 };
 
 const PROGRESS_ACTIONS = new Set(["planning", "generating_audio", "generating_images", "rendering"]);
-const GENERATING_INTENTS = new Set(["plan", "audio", "images", "video", "regenerate_audio", "regenerate_images"]);
+const GENERATING_INTENTS = new Set(["plan", "audio", "images", "video", "regenerate_audio", "regenerate_images", "regenerate_video"]);
 
 const STATUS_LABEL: Partial<Record<JobStatus, string>> = {
     PENDING: "Starting...",
@@ -172,6 +172,8 @@ export default function Generate() {
 
     const hasAudio = !!jobMeta?.output_path;
     const hasImages = !!jobMeta?.storyboard?.length;
+    const hasVideo = !!jobMeta?.video_path;
+    const videoSrc = hasVideo ? `${API_URL}/outputs/${jobMeta.video_path}` : null;
 
     const audioSrc = hasAudio
         ? (() => {
@@ -272,6 +274,7 @@ export default function Generate() {
         }
         if (jobStatus === "COMPLETED") {
             const step = jobMeta?.current_step;
+            if (step === "RENDER" && jobMeta?.video_path) { setActiveTab("video"); return; }
             if (step === "PLAN") { setActiveTab("plan"); return; }
             if (step === "IMAGES" && jobMeta?.storyboard?.length) { setActiveTab("images"); return; }
             if (jobMeta?.output_path) { setActiveTab("audio"); return; }
@@ -669,6 +672,15 @@ export default function Generate() {
                                         <Download size={12} /> Download
                                     </a>
                                 )}
+                                {isDone && videoSrc && activeTab === "video" && (
+                                    <a
+                                        href={videoSrc}
+                                        download
+                                        className="flex items-center gap-1.5 rounded-full bg-yellow-400 px-4 py-1.5 text-xs font-bold text-black hover:bg-yellow-300 active:scale-95"
+                                    >
+                                        <Download size={12} /> Download MP4
+                                    </a>
+                                )}
                             </div>
                         </div>
 
@@ -918,26 +930,69 @@ export default function Generate() {
                             )}
 
                             {activeTab === "video" && (
-                                <div className="flex flex-1 items-center justify-center">
-                                    <div className="relative aspect-video w-full overflow-hidden rounded-2xl border border-yellow-400/20">
-                                        <div className="h-full w-full bg-zinc-900" />
-
-                                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
-                                            {jobStatus === "RENDERING" && (
-                                                <>
-                                                    <Film size={28} className="text-yellow-400/60" />
-                                                    <span className="text-xs font-semibold text-yellow-400">
-                                                        RENDERING VIDEO...
+                                <div className="flex flex-1 flex-col gap-4">
+                                    {jobStatus === "RENDERING" && (
+                                        <div className="flex flex-1 items-center justify-center">
+                                            <div className="w-full max-w-xl rounded-[26px] border border-yellow-400/20 bg-black/35 px-8 py-8 backdrop-blur-md text-center">
+                                                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-yellow-400/20 bg-yellow-400/10">
+                                                    <Film size={26} className="text-yellow-400" />
+                                                </div>
+                                                <p className="text-xs font-semibold uppercase tracking-widest text-yellow-400/70">A Renderizar</p>
+                                                <h4 className="mt-2 text-xl font-semibold text-white">A montar o teu AMV...</h4>
+                                                <p className="mt-2 text-sm text-zinc-400">
+                                                    A combinar música, imagens e transições com ffmpeg.
+                                                </p>
+                                                <div className="mt-5 flex justify-center">
+                                                    <WaveBars active barCount={16} height={32} barWidth={3} />
+                                                </div>
+                                                <div className="mt-4 flex justify-center">
+                                                    <span className="rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-1.5 text-xs font-semibold tabular-nums text-yellow-300">
+                                                        {formatDuration(elapsedSec)}
                                                     </span>
-                                                    <div className="h-0.5 w-28 overflow-hidden rounded-full bg-yellow-400/20">
-                                                        <div className="h-full w-2/3 animate-pulse rounded-full bg-yellow-400" />
-                                                    </div>
-                                                </>
-                                            )}
-
-                                            {!gen && <span className="text-xs text-zinc-500">The video will appear here</span>}
+                                                </div>
+                                            </div>
                                         </div>
-                                    </div>
+                                    )}
+
+                                    {!gen && hasVideo && videoSrc && (
+                                        <div className="flex flex-1 flex-col gap-3">
+                                            <div className="overflow-hidden rounded-[20px] border border-yellow-400/20 bg-black shadow-[0_0_30px_rgba(250,204,21,0.06)]">
+                                                <video
+                                                    controls
+                                                    className="w-full"
+                                                    src={videoSrc}
+                                                    preload="metadata"
+                                                />
+                                            </div>
+                                            <div className="flex items-center justify-between px-1">
+                                                <p className="text-xs text-zinc-500">
+                                                    <span className="text-green-400 font-semibold">✓ AMV pronto</span>
+                                                    {" — podes fazer download ou refinar a geração"}
+                                                </p>
+                                                <a
+                                                    href={videoSrc}
+                                                    download
+                                                    className="flex items-center gap-1.5 rounded-full bg-yellow-400 px-4 py-1.5 text-xs font-bold text-black hover:bg-yellow-300 active:scale-95"
+                                                >
+                                                    <Download size={12} /> Download
+                                                </a>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {!gen && !hasVideo && (
+                                        <div className="flex flex-1 items-center justify-center">
+                                            <div className="w-full max-w-xl rounded-[26px] border border-dashed border-yellow-400/20 bg-black/25 px-8 py-10 text-center backdrop-blur-sm">
+                                                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-yellow-400/15 bg-yellow-400/8">
+                                                    <Film size={28} className="text-yellow-400/70" />
+                                                </div>
+                                                <h4 className="text-xl font-semibold text-white">O vídeo aparecerá aqui</h4>
+                                                <p className="mt-2 text-sm leading-relaxed text-zinc-400">
+                                                    Gera a música e as imagens e pede o vídeo final — o AMV será montado automaticamente.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
