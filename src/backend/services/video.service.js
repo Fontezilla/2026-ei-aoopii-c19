@@ -113,8 +113,8 @@ async function renderVideo(storyboard, audioAbsPath, creativePlan, parentJobId) 
     args.push("-filter_complex_script", filterScript);
     args.push("-map", "[vout]");
     args.push("-map", `${N}:a`);
-    args.push("-c:v", "libx264", "-preset", "fast", "-crf", "22");
-    args.push("-c:a", "aac", "-b:a", "128k");
+    args.push("-c:v", "libx264", "-preset", "fast", "-crf", "22", "-pix_fmt", "yuv420p");
+    args.push("-c:a", "aac", "-b:a", "128k", "-ar", "44100");
     args.push("-movflags", "+faststart");
     args.push("-shortest");
     args.push("-y");

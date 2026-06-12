@@ -22,16 +22,8 @@ const JOB_STEP = {
     RENDER: "RENDER",
 };
 
-// Limite de duração do áudio. Acima de ~40s (≈2000 tokens autoregressivos a
-// 50Hz), o MusicGen entra em território de extrapolação (treinado em clips de
-// ~30s) e o cuBLAS falha com "device-side assert triggered" de forma
-// reprodutível — confirmado por bisseção controlada (40s ok, 50s crasha sempre
-// ao mesmo ponto). Aplicamos este teto tanto ao valor do utilizador como ao
-// fallback, para nunca cair na zona instável.
 const MAX_AUDIO_DURATION = 30;
 
-// Estados em que já existe uma geração a decorrer — usados pela guarda de
-// concorrência para impedir disparar uma segunda geração no mesmo job.
 const GENERATING_STATUSES = [
     JOB_STATUS.GENERATING_PLAN,
     JOB_STATUS.GENERATING_AUDIO,
@@ -57,6 +49,11 @@ async function createJob(userId, initialTheme = "") {
         .single();
     if (convError) throw new Error(convError.message);
 
+    const { error: metaError } = await supabase
+        .from("job_metadata")
+        .insert({ job_id: jobId });
+    if (metaError) console.error("[Orchestrator] Erro ao criar job_metadata:", metaError.message);
+
     return { jobId, conversationId: conv.id };
 }
 
@@ -71,16 +68,14 @@ async function handleMessage(jobId, conversationId, userMessage) {
     if (jobErr && jobErr.code !== "PGRST116")
         console.warn("[Orchestrator] Erro ao buscar job:", jobErr.message);
 
-    const { data: metadata, error: metaErr } = await supabase
+    const { data: metaRows, error: metaErr } = await supabase
         .from("job_metadata")
         .select("creative_plan, storyboard, music_prompt, settings")
         .eq("job_id", jobId)
-        .single();
-    if (metaErr && metaErr.code !== "PGRST116")
-        console.warn("[Orchestrator] Erro ao buscar metadata:", metaErr.message);
+        .limit(1);
+    if (metaErr) console.warn("[Orchestrator] Erro ao buscar metadata:", metaErr.message);
+    const metadata = metaRows && metaRows.length > 0 ? metaRows[0] : null;
 
-    // Janela de histórico enviada ao classify-intent. As mensagens de progresso
-    // são filtradas adiante (buildContext), por isso o número efetivo é menor.
     const { data: recentMessages } = await supabase
         .from("messages")
         .select("role, content, action")
@@ -96,7 +91,6 @@ async function handleMessage(jobId, conversationId, userMessage) {
         console.error("[Orchestrator] Erro no classify-intent:", err.message);
         const reply = "Ocorreu um erro ao processar a tua mensagem. Tenta novamente.";
         await addMessage(conversationId, "assistant", reply, "error");
-        // Garantir que o job não fica preso em PENDING quando o classify falha
         if (job?.status === "PENDING") {
             await updateJobStatus(jobId, JOB_STATUS.FAILED, null, err.message);
         }
@@ -107,10 +101,6 @@ async function handleMessage(jobId, conversationId, userMessage) {
 
     const shouldGenerate = ["plan", "audio", "images", "video", "regenerate_audio", "regenerate_images", "regenerate_video"].includes(intent);
 
-    // Guarda de concorrência: tentar "reservar" o job de forma atómica antes de
-    // disparar uma geração. O update só afeta linhas que NÃO estejam já num
-    // estado de geração, por isso dois pedidos simultâneos não arrancam duas
-    // gerações no mesmo job (evita OOM no worker e corrupção do mesmo audio.wav).
     if (shouldGenerate) {
         const { data: reserved } = await supabase
             .from("jobs")
@@ -120,7 +110,7 @@ async function handleMessage(jobId, conversationId, userMessage) {
             .select("id");
 
         if (!reserved || reserved.length === 0) {
-            const busyReply = "Ainda estou a tratar do pedido anterior — espera que termine antes de pedir outra geração. 🎶";
+            const busyReply = "Ainda estou a tratar do pedido anterior — espera que termine antes de pedir outra geração.";
             await addMessage(conversationId, "assistant", busyReply, "chat");
             return { intent: "busy", reply: busyReply, params };
         }
@@ -131,7 +121,9 @@ async function handleMessage(jobId, conversationId, userMessage) {
     if (shouldGenerate) {
         const theme = (params?.theme || job?.theme || userMessage || "anime").trim();
         const style = params?.style || "anime cinematic emotional";
-        const duration = Math.min(MAX_AUDIO_DURATION, Math.max(5, parseInt(params?.duration, 10) || MAX_AUDIO_DURATION));
+        const parsedDuration = parseInt(params?.duration, 10);
+        const msgDuration = extractDurationFromMessage(userMessage);
+        const duration = Math.min(MAX_AUDIO_DURATION, Math.max(5, parsedDuration || msgDuration || MAX_AUDIO_DURATION));
 
         setImmediate(() => {
             runGeneration(jobId, conversationId, intent, theme, style, duration, params).catch((err) => {
@@ -171,29 +163,22 @@ async function runAudioOnly(jobId, conversationId, musicPrompt, durationSeconds,
     await addMessage(conversationId, "assistant", "A gerar a música...", "generating_audio");
 
     const audioJobId = `audio_${jobId.replace(/-/g, "_")}`;
-    // O MusicGen é treinado com descrições em inglês. O Qwen já devolve um
-    // music_prompt em inglês em params.music_prompt (PT-PT fica no response_text
-    // para o utilizador); usar esse e só cair no theme se faltar.
     const effectivePrompt = (params.music_prompt || musicPrompt || "anime").trim();
     console.log(`[Orchestrator] A gerar áudio job=${jobId} duration=${durationSeconds}s prompt="${effectivePrompt}"`);
     const outputPath = await generateAudio(audioJobId, effectivePrompt, durationSeconds, jobId);
-
-    // Guardar metadata para os cards do frontend.
-    // Tentar inferir genre/mood do music_prompt quando o Qwen não os devolve explicitamente.
     const inferredGenre = params.genre || inferFromPrompt(effectivePrompt, "genre") || "—";
     const inferredMood = params.mood || inferFromPrompt(effectivePrompt, "mood") || "—";
     const inferredTempo = params.tempo || inferFromPrompt(effectivePrompt, "tempo") || "—";
 
-    await supabase.from("job_metadata").upsert({
-        job_id: jobId,
+    await upsertJobMetadata(jobId, {
         music_prompt: effectivePrompt,
         settings: {
-            genre:    inferredGenre,
+            genre: inferredGenre,
             duration: `${durationSeconds}s`,
-            mood:     inferredMood,
-            tempo:    inferredTempo,
+            mood: inferredMood,
+            tempo: inferredTempo,
         },
-    }, { onConflict: 'job_id' });
+    });
 
     await logJob(jobId, JOB_STATUS.COMPLETED, "Áudio gerado.");
     await addMessage(
@@ -215,16 +200,16 @@ async function runPlanOnly(jobId, conversationId, theme, style, durationSeconds)
     await logJob(jobId, JOB_STATUS.GENERATING_PLAN, "A gerar plano criativo...");
     await addMessage(conversationId, "assistant", "A criar o plano criativo para o teu AMV...", "planning");
 
-    const plan = await generatePlan(theme, style, 12, durationSeconds);
+    const numScenes = Math.max(2, Math.round(durationSeconds / 2.5));
+    const plan = await generatePlan(theme, style, numScenes, durationSeconds);
     if (!plan) throw new Error("O worker não devolveu um plano criativo.");
 
-    await supabase.from("job_metadata").upsert({
-        job_id: jobId,
+    await upsertJobMetadata(jobId, {
         creative_plan: plan,
         music_prompt: plan.music_prompt || theme,
         settings: plan.settings || {},
         storyboard: null,
-    }, { onConflict: 'job_id' });
+    });
 
     await supabase.from("jobs").update({
         theme,
@@ -242,11 +227,12 @@ async function runPlanOnly(jobId, conversationId, theme, style, durationSeconds)
 }
 
 async function runVideoOnly(jobId, conversationId) {
-    const { data: metadata } = await supabase
+    const { data: metaRowsV } = await supabase
         .from("job_metadata")
         .select("creative_plan, storyboard")
         .eq("job_id", jobId)
-        .single();
+        .limit(1);
+    const metadata = metaRowsV && metaRowsV.length > 0 ? metaRowsV[0] : null;
 
     const { data: job } = await supabase
         .from("jobs")
@@ -278,9 +264,7 @@ async function runVideoOnly(jobId, conversationId) {
         jobId
     );
 
-    await supabase.from("job_metadata")
-        .update({ video_path: videoRelPath })
-        .eq("job_id", jobId);
+    await upsertJobMetadata(jobId, { video_path: videoRelPath });
 
     await supabase.from("jobs").update({
         status: JOB_STATUS.COMPLETED,
@@ -292,17 +276,18 @@ async function runVideoOnly(jobId, conversationId) {
     await addMessage(
         conversationId,
         "assistant",
-        "🎬 O teu AMV está pronto! Podes ver o vídeo na aba Video.",
+        "O teu AMV está pronto! Podes ver o vídeo na aba Video.",
         "done"
     );
 }
 
 async function runImagesOnly(jobId, conversationId) {
-    const { data: metadata } = await supabase
+    const { data: metaRowsI } = await supabase
         .from("job_metadata")
         .select("creative_plan")
         .eq("job_id", jobId)
-        .single();
+        .limit(1);
+    const metadata = metaRowsI && metaRowsI.length > 0 ? metaRowsI[0] : null;
 
     const imagePrompts = (metadata?.creative_plan?.storyboard || [])
         .map((s) => s.image_prompt)
@@ -320,7 +305,7 @@ async function runImagesOnly(jobId, conversationId) {
     const sceneImages = await generateImages(imageJobId, imagePrompts, jobId);
 
     if (sceneImages.length > 0) {
-        await supabase.from("job_metadata").update({ storyboard: sceneImages }).eq("job_id", jobId);
+        await upsertJobMetadata(jobId, { storyboard: sceneImages });
     }
 
     await supabase.from("jobs").update({
@@ -342,18 +327,18 @@ async function runFullPipeline(jobId, conversationId, theme, style, durationSeco
     await logJob(jobId, JOB_STATUS.GENERATING_PLAN, "A gerar plano criativo...");
     await addMessage(conversationId, "assistant", "A criar o plano criativo para o teu AMV...", "planning");
 
-    const plan = await generatePlan(theme, style, 12, durationSeconds);
+    const numScenes = Math.max(2, Math.round(durationSeconds / 2.5));
+    const plan = await generatePlan(theme, style, numScenes, durationSeconds);
     if (!plan) throw new Error("O worker não devolveu um plano criativo.");
 
     const musicPrompt = plan.music_prompt || theme;
     const imagePrompts = (plan.storyboard || []).map((s) => s.image_prompt).filter(Boolean);
 
-    await supabase.from("job_metadata").upsert({
-        job_id: jobId,
+    await upsertJobMetadata(jobId, {
         creative_plan: plan,
         music_prompt: musicPrompt,
         settings: plan.settings || {},
-    }, { onConflict: 'job_id' });
+    });
     await supabase.from("jobs").update({ theme }).eq("id", jobId);
 
     await updateJobStatus(jobId, JOB_STATUS.GENERATING_AUDIO, JOB_STEP.AUDIO);
@@ -361,9 +346,6 @@ async function runFullPipeline(jobId, conversationId, theme, style, durationSeco
     await addMessage(conversationId, "assistant", "A gerar a música...", "generating_audio");
 
     const audioJobId = `audio_${jobId.replace(/-/g, "_")}`;
-    // O áudio é obrigatório para o AMV: se falhar, propagar o erro para que o
-    // job fique FAILED (em vez de terminar COMPLETED com output_path null).
-    // As imagens (abaixo) continuam opcionais e o seu erro é tolerado.
     console.log(`[Orchestrator] A gerar áudio job=${jobId} duration=${durationSeconds}s prompt="${musicPrompt}"`);
     const outputPath = await generateAudio(audioJobId, musicPrompt, durationSeconds, jobId);
 
@@ -377,14 +359,13 @@ async function runFullPipeline(jobId, conversationId, theme, style, durationSeco
         try {
             sceneImages = await generateImages(imageJobId, imagePrompts, jobId);
             if (sceneImages.length > 0) {
-                await supabase.from("job_metadata").update({ storyboard: sceneImages }).eq("job_id", jobId);
+                await upsertJobMetadata(jobId, { storyboard: sceneImages });
             }
         } catch (err) {
             console.error("[Orchestrator] Erro nas imagens:", err.message);
         }
     }
 
-    // Render video if we have both images and audio
     let videoRelPath = null;
     if (sceneImages.length > 0) {
         await updateJobStatus(jobId, JOB_STATUS.RENDERING, JOB_STEP.RENDER);
@@ -393,9 +374,7 @@ async function runFullPipeline(jobId, conversationId, theme, style, durationSeco
 
         try {
             videoRelPath = await renderVideo(sceneImages, outputPath, plan, jobId);
-            await supabase.from("job_metadata")
-                .update({ video_path: videoRelPath })
-                .eq("job_id", jobId);
+            await upsertJobMetadata(jobId, { video_path: videoRelPath });
         } catch (err) {
             console.error("[Orchestrator] Erro na renderização do vídeo:", err.message);
         }
@@ -412,18 +391,25 @@ async function runFullPipeline(jobId, conversationId, theme, style, durationSeco
     await addMessage(
         conversationId, "assistant",
         videoRelPath
-            ? "🎬 O teu AMV está pronto! Podes ouvir a música, ver as cenas e o vídeo final."
+            ? "O teu AMV está pronto! Podes ouvir a música, ver as cenas e o vídeo final."
             : "O teu AMV está pronto! Podes ouvir a música e ver as cenas geradas.",
         "done", { output_path: outputPath }
     );
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+function extractDurationFromMessage(message) {
+    const match = message.match(/(\d+)\s*s(?:eg(?:undos?)?|econds?)?/i);
+    return match ? parseInt(match[1], 10) : null;
+}
 
-/**
- * Tenta inferir genre, mood ou tempo a partir do music_prompt quando o Qwen
- * não os devolve como params explícitos.
- */
+async function upsertJobMetadata(jobId, fields) {
+    const { error } = await supabase
+        .from("job_metadata")
+        .update(fields)
+        .eq("job_id", jobId);
+    if (error) console.error("[Orchestrator] Erro ao actualizar job_metadata:", error.message);
+}
+
 function inferFromPrompt(prompt = "", field) {
     const p = prompt.toLowerCase();
 

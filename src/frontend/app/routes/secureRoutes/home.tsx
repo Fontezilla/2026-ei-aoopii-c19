@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { ArrowRight, AudioLines, Camera, LogOut, Play } from "lucide-react";
+import { ArrowRight, AudioLines, Camera, Film, LogOut, Music, Play } from "lucide-react";
 import { authService, type AuthUser } from "~/services/authService";
 
 export function meta() {
@@ -14,6 +14,8 @@ interface Job {
     theme?: string | null;
     prompt?: string | null;
     status?: string | null;
+    video_path?: string | null;
+    first_image?: string | null;
 }
 
 function getUserDisplayName(user: AuthUser | null) {
@@ -376,37 +378,76 @@ function RecentTracks() {
 
     return (
         <div className="grid flex-1 grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {jobs.map((job) => (
-                <div
-                    key={job.id}
-                    className="rounded-2xl border border-yellow-400/30 bg-black/70 p-3 shadow-xl shadow-yellow-500/5 backdrop-blur-xl"
-                >
-                    <div className="flex h-40 items-center justify-center overflow-hidden rounded-xl bg-zinc-900">
-                        <span className="text-xs text-zinc-500">
-                            {job.theme || job.prompt || "Untitled"}
-                        </span>
-                    </div>
+            {jobs.map((job) => {
+                const title = job.theme || job.prompt || "Untitled";
+                const videoSrc = job.video_path ? `${API_URL}/outputs/${job.video_path}` : null;
+                const imageSrc = job.first_image ? `${API_URL}/outputs/${job.first_image}` : null;
 
-                    <p className="mt-2 truncate px-1 text-sm font-medium text-zinc-300">
-                        {job.theme || job.prompt || "Untitled"}
-                    </p>
+                return (
+                    <div
+                        key={job.id}
+                        className="group overflow-hidden rounded-2xl border border-yellow-400/30 bg-black/70 shadow-xl shadow-yellow-500/5 backdrop-blur-xl"
+                    >
+                        <div className="relative h-40 overflow-hidden bg-zinc-900">
+                            {videoSrc ? (
+                                <video
+                                    src={videoSrc}
+                                    muted
+                                    loop
+                                    playsInline
+                                    preload="metadata"
+                                    className="h-full w-full object-cover opacity-80 transition duration-300 group-hover:opacity-100"
+                                    onMouseEnter={(e) => (e.currentTarget as HTMLVideoElement).play()}
+                                    onMouseLeave={(e) => { (e.currentTarget as HTMLVideoElement).pause(); (e.currentTarget as HTMLVideoElement).currentTime = 0; }}
+                                />
+                            ) : imageSrc ? (
+                                <img
+                                    src={imageSrc}
+                                    alt={title}
+                                    className="h-full w-full object-cover opacity-80 transition duration-300 group-hover:scale-105 group-hover:opacity-100"
+                                />
+                            ) : (
+                                <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-linear-to-br from-zinc-900 to-black px-4 text-center">
+                                    <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-yellow-400/20 bg-yellow-400/8">
+                                        <Music size={16} className="text-yellow-400/60" />
+                                    </div>
+                                    <span className="text-xs font-medium text-zinc-500 line-clamp-2 leading-snug">
+                                        {title}
+                                    </span>
+                                </div>
+                            )}
 
-                    <div className="mt-2 flex justify-center">
-                        <button
-                            type="button"
-                            onClick={() =>
-                                navigate("/app/generate", {
-                                    state: { jobId: job.id },
-                                })
-                            }
-                            className="flex h-8 w-full items-center justify-center gap-1.5 rounded-full bg-yellow-400 text-sm font-bold text-black hover:bg-yellow-300 active:scale-95"
-                        >
-                            <Play size={14} />
-                            Open
-                        </button>
+                            {videoSrc && (
+                                <div className="absolute top-2 left-2 flex items-center gap-1 rounded-md bg-black/70 px-2 py-0.5 text-[10px] font-semibold text-yellow-400">
+                                    <Film size={10} />
+                                    Video
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="p-3">
+                            <p className="truncate px-1 text-sm font-medium text-zinc-300">
+                                {title}
+                            </p>
+
+                            <div className="mt-2 flex justify-center">
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        navigate("/app/generate", {
+                                            state: { jobId: job.id },
+                                        })
+                                    }
+                                    className="flex h-8 w-full items-center justify-center gap-1.5 rounded-full bg-yellow-400 text-sm font-bold text-black hover:bg-yellow-300 active:scale-95"
+                                >
+                                    <Play size={14} />
+                                    Open
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                </div>
-            ))}
+                );
+            })}
         </div>
     );
 }

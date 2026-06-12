@@ -76,12 +76,21 @@ router.get("/:id/status", async (req, res) => {
             return res.status(404).json({ message: "Job não encontrado." });
         }
 
-        const { data: meta } = await supabase
+        const { data: metaRows } = await supabase
             .from("job_metadata")
-            .select("music_prompt, settings, storyboard, creative_plan, video_path")
+            .select()
             .eq("job_id", job.id)
-            .single();
-        const metadata = meta || null;
+            .limit(1);
+        const meta = metaRows && metaRows.length > 0 ? metaRows[0] : null;
+        const metadata = meta
+            ? {
+                music_prompt: meta.music_prompt ?? null,
+                settings: meta.settings ?? null,
+                storyboard: meta.storyboard ?? null,
+                creative_plan: meta.creative_plan ?? null,
+                video_path: meta.video_path ?? null,
+            }
+            : null;
 
         res.json({ ...job, metadata });
     } catch (err) {
@@ -126,7 +135,35 @@ router.get("/history", async (req, res) => {
 
         if (error) throw new Error(error.message);
 
-        res.json({ jobs: jobs || [] });
+        const jobIds = (jobs || []).map((j) => j.id);
+        const metaMap = {};
+
+        if (jobIds.length > 0) {
+            const { data: metas, error: metaErr } = await supabase
+                .from("job_metadata")
+                .select()
+                .in("job_id", jobIds);
+            if (metaErr) console.warn("[GET /job/history] metadata error:", metaErr.message);
+            for (const m of metas || []) {
+                metaMap[m.job_id] = m;
+            }
+        }
+
+        const enriched = (jobs || []).map((job) => {
+            const meta = metaMap[job.id] ?? null;
+            return {
+                id: job.id,
+                status: job.status,
+                theme: job.theme,
+                output_path: job.output_path,
+                created_at: job.created_at,
+                completed_at: job.completed_at,
+                video_path: meta?.video_path ?? null,
+                first_image: meta?.storyboard?.[0]?.image_path ?? null,
+            };
+        });
+
+        res.json({ jobs: enriched });
     } catch (err) {
         console.error("[GET /job/history]", err.message);
         res.status(500).json({ message: "Erro ao obter histórico." });

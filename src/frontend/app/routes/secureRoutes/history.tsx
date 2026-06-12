@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import { Download, Play } from "lucide-react";
+import { Download, Film, Music, Play } from "lucide-react";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
@@ -13,11 +13,10 @@ interface Job {
     theme?: string | null;
     prompt?: string | null;
     status?: string | null;
-    audio_url?: string | null;
-    image_url?: string | null;
+    output_path?: string | null;
+    video_path?: string | null;
+    first_image?: string | null;
     created_at?: string | null;
-    duration?: string | null;
-    genre?: string | null;
 }
 
 function formatDate(value?: string | null) {
@@ -132,7 +131,7 @@ export default function History() {
                             <p className="mt-2 text-sm text-zinc-500">
                                 {loading
                                     ? "A carregar histórico..."
-                                    : `${jobs.length} músicas geradas`}
+                                    : `${jobs.length} AMV generated`}
                             </p>
                         </div>
                     </div>
@@ -157,7 +156,7 @@ export default function History() {
                     {!loading && !error && jobs.length === 0 && (
                         <div className="mt-10 flex min-h-60 items-center justify-center rounded-2xl border border-yellow-400/20 bg-black/40 px-6 text-center">
                             <p className="text-sm text-zinc-500">
-                                Ainda não tens músicas geradas.
+                                You haven't generated any AMVs yet.
                             </p>
                         </div>
                     )}
@@ -166,9 +165,17 @@ export default function History() {
                         <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
                             {jobs.map((job) => {
                                 const title = getTrackTitle(job);
-                                const prompt = getTrackPrompt(job);
-                                const image = job.image_url;
-                                const audioUrl = job.audio_url;
+                                const videoSrc = job.video_path ? `${API_URL}/outputs/${job.video_path}` : null;
+                                const imageSrc = job.first_image ? `${API_URL}/outputs/${job.first_image}` : null;
+                                const audioSrc = job.output_path
+                                    ? (() => {
+                                        const parts = job.output_path.split(/[/\\]/);
+                                        const rel = parts[parts.length - 2] === "outputs"
+                                            ? parts[parts.length - 1]
+                                            : parts.slice(-2).join("/");
+                                        return `${API_URL}/outputs/${rel}`;
+                                    })()
+                                    : null;
 
                                 return (
                                     <div
@@ -176,17 +183,42 @@ export default function History() {
                                         className="group overflow-hidden rounded-2xl border border-yellow-400/30 bg-black/70 shadow-xl shadow-yellow-500/5 backdrop-blur-xl"
                                     >
                                         <div className="relative aspect-video overflow-hidden bg-zinc-900">
-                                            {image ? (
+                                            {videoSrc ? (
+                                                <video
+                                                    src={videoSrc}
+                                                    muted
+                                                    loop
+                                                    playsInline
+                                                    preload="metadata"
+                                                    className="h-full w-full object-cover opacity-80 transition duration-300 group-hover:opacity-100"
+                                                    onMouseEnter={(e) => (e.currentTarget as HTMLVideoElement).play()}
+                                                    onMouseLeave={(e) => { (e.currentTarget as HTMLVideoElement).pause(); (e.currentTarget as HTMLVideoElement).currentTime = 0; }}
+                                                />
+                                            ) : imageSrc ? (
                                                 <img
-                                                    src={image}
+                                                    src={imageSrc}
                                                     alt={title}
                                                     className="h-full w-full object-cover opacity-80 transition duration-300 group-hover:scale-105 group-hover:opacity-100"
                                                 />
                                             ) : (
-                                                <div className="flex h-full w-full items-center justify-center px-4 text-center">
-                                                    <span className="text-xs text-zinc-500">
+                                                <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-linear-to-br from-zinc-900 to-black px-4 text-center">
+                                                    <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-yellow-400/20 bg-yellow-400/8">
+                                                        {job.status === "COMPLETED" ? (
+                                                            <Music size={18} className="text-yellow-400/60" />
+                                                        ) : (
+                                                            <Film size={18} className="text-zinc-600" />
+                                                        )}
+                                                    </div>
+                                                    <span className="text-xs font-medium text-zinc-500 leading-snug line-clamp-2">
                                                         {title}
                                                     </span>
+                                                </div>
+                                            )}
+
+                                            {videoSrc && (
+                                                <div className="absolute top-2 left-2 flex items-center gap-1 rounded-md bg-black/70 px-2 py-0.5 text-[10px] font-semibold text-yellow-400">
+                                                    <Film size={10} />
+                                                    Video
                                                 </div>
                                             )}
 
@@ -200,15 +232,12 @@ export default function History() {
                                                     }
                                                     className="flex h-12 w-12 items-center justify-center rounded-full bg-yellow-400 active:scale-95"
                                                 >
-                                                    <Play
-                                                        size={20}
-                                                        className="text-black"
-                                                    />
+                                                    <Play size={20} className="text-black" />
                                                 </button>
                                             </div>
 
                                             <span className="absolute right-2 bottom-2 rounded-md bg-black/80 px-2 py-0.5 text-xs font-semibold text-white">
-                                                {job.duration || job.status || "ready"}
+                                                {job.status === "COMPLETED" ? "ready" : job.status?.toLowerCase() ?? "—"}
                                             </span>
                                         </div>
 
@@ -217,15 +246,10 @@ export default function History() {
                                                 <p className="truncate text-sm font-semibold text-white">
                                                     {title}
                                                 </p>
-
                                                 <span className="shrink-0 rounded-full border border-yellow-400/30 bg-yellow-400/10 px-2.5 py-0.5 text-xs font-semibold text-yellow-400">
-                                                    {job.genre || job.status || "AI"}
+                                                    AI
                                                 </span>
                                             </div>
-
-                                            <p className="mt-1 truncate text-xs text-zinc-500">
-                                                "{prompt}"
-                                            </p>
 
                                             <div className="mt-3 flex items-center justify-between">
                                                 <span className="text-xs text-zinc-600">
@@ -245,9 +269,9 @@ export default function History() {
                                                         <Play size={14} />
                                                     </button>
 
-                                                    {audioUrl && (
+                                                    {audioSrc && (
                                                         <a
-                                                            href={audioUrl}
+                                                            href={audioSrc}
                                                             download
                                                             className="flex h-8 w-8 items-center justify-center rounded-lg border border-yellow-400/20 bg-black/50 text-zinc-500 hover:border-yellow-400/50 hover:text-yellow-400 active:scale-95"
                                                         >

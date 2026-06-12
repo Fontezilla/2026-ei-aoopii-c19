@@ -299,8 +299,6 @@ export default function Generate() {
             const data = await res.json();
             const msgs: Message[] = data.messages || [];
 
-            // Sempre substituir pelo DB se tiver pelo menos tantas mensagens quanto o estado local.
-            // Garante que mensagens de progresso da geração aparecem mesmo quando a contagem é igual.
             setMessages((prev) => (msgs.length >= prev.length ? msgs : prev));
         } catch {
         }
@@ -383,8 +381,11 @@ export default function Generate() {
 
             if (GENERATING_INTENTS.has(data.intent)) {
                 setJobStatus("GENERATING_PLAN");
-                setJobMeta(null);
                 setIsAudioPlaying(false);
+                if (data.intent === "plan") setActiveTab("plan");
+                else if (data.intent === "images" || data.intent === "regenerate_images") setActiveTab("images");
+                else if (data.intent === "video" || data.intent === "regenerate_video") setActiveTab("video");
+                else setActiveTab("audio");
             }
 
             await loadMessages(jid);
@@ -473,13 +474,13 @@ export default function Generate() {
 
                             {isDone && (
                                 <span className="flex items-center gap-2 rounded-full border border-green-400/30 bg-green-400/10 px-3 py-1 text-xs font-semibold text-green-400">
-                                    ✓ Done
+                                    Done
                                 </span>
                             )}
 
                             {isFailed && (
                                 <span className="flex items-center gap-2 rounded-full border border-red-400/30 bg-red-400/10 px-3 py-1 text-xs font-semibold text-red-400">
-                                    ✗ Error
+                                    Error
                                 </span>
                             )}
                         </div>
@@ -937,10 +938,10 @@ export default function Generate() {
                                                 <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-yellow-400/20 bg-yellow-400/10">
                                                     <Film size={26} className="text-yellow-400" />
                                                 </div>
-                                                <p className="text-xs font-semibold uppercase tracking-widest text-yellow-400/70">A Renderizar</p>
-                                                <h4 className="mt-2 text-xl font-semibold text-white">A montar o teu AMV...</h4>
+                                                <p className="text-xs font-semibold uppercase tracking-widest text-yellow-400/70">Assembling</p>
+                                                <h4 className="mt-2 text-xl font-semibold text-white">Assembling your AMV...</h4>
                                                 <p className="mt-2 text-sm text-zinc-400">
-                                                    A combinar música, imagens e transições com ffmpeg.
+                                                    Combining music, images, and transitions with ffmpeg.
                                                 </p>
                                                 <div className="mt-5 flex justify-center">
                                                     <WaveBars active barCount={16} height={32} barWidth={3} />
@@ -966,8 +967,8 @@ export default function Generate() {
                                             </div>
                                             <div className="flex items-center justify-between px-1">
                                                 <p className="text-xs text-zinc-500">
-                                                    <span className="text-green-400 font-semibold">✓ AMV pronto</span>
-                                                    {" — podes fazer download ou refinar a geração"}
+                                                    <span className="text-green-400 font-semibold">AMV ready</span>
+                                                    {" — you can download or refine the generation"}
                                                 </p>
                                                 <a
                                                     href={videoSrc}
@@ -986,9 +987,9 @@ export default function Generate() {
                                                 <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-yellow-400/15 bg-yellow-400/8">
                                                     <Film size={28} className="text-yellow-400/70" />
                                                 </div>
-                                                <h4 className="text-xl font-semibold text-white">O vídeo aparecerá aqui</h4>
+                                                <h4 className="text-xl font-semibold text-white">The video will appear here</h4>
                                                 <p className="mt-2 text-sm leading-relaxed text-zinc-400">
-                                                    Gera a música e as imagens e pede o vídeo final — o AMV será montado automaticamente.
+                                                    Generate the music and images and request the final video — the AMV will be assembled automatically.
                                                 </p>
                                             </div>
                                         </div>
