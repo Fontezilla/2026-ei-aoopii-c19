@@ -11,7 +11,7 @@
 
 ## Track
 
-**A — Deep Learning**
+**B - AI Agent**
 
 ## Project Description
 
