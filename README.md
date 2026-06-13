@@ -193,4 +193,4 @@ The app will be available at `http://localhost:5173`.
 Open the notebooks in Kaggle and run all cells. Each notebook exposes an HTTP API via Ngrok — copy the public URLs into the backend `.env`.
 
 - **Worker 1** (`notebook/aoop-armonyx-llm-1.ipynb`) — Qwen2.5:14b + MusicGen
-- **Worker 2** — Stable Diffusion XL
+- **Worker 2** (`notebook/aoop-armonyx-llm-2.ipynb`) — Stable Diffusion XL
