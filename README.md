@@ -9,6 +9,26 @@
 
 **Group:** C19
 
+## Demo
+
+> Test theme: a fight between two friends — melancholic electronic music, anime cinematic style.
+
+### Generated Music
+
+<video src="https://github.com/user-attachments/assets/56c551fe-0b07-4e19-94ae-85c23956ddb2" autoplay loop muted playsinline width="100%"></video>
+
+---
+
+### Creative Plan & Images
+
+<video src="https://github.com/user-attachments/assets/eeaa06ec-4b2e-45c6-bf28-4f5c54ef3ff7" autoplay loop muted playsinline width="100%"></video>
+
+---
+
+### Final Video
+
+<video src="https://github.com/user-attachments/assets/937acc13-d9eb-4d43-977b-d11ef405a7c7" autoplay loop muted playsinline width="100%"></video>
+
 ## Track
 
 **B - AI Agent**

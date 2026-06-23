@@ -183,7 +183,7 @@ async function runAudioOnly(jobId, conversationId, musicPrompt, durationSeconds,
     await logJob(jobId, JOB_STATUS.COMPLETED, "Áudio gerado.");
     await addMessage(
         conversationId, "assistant",
-        "🎉 A tua música está pronta!",
+        "A  tua música está pronta!",
         "done", { output_path: outputPath }
     );
 
